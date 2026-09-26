@@ -12,6 +12,14 @@ const WELCOME = {
 };
 
 const LAYOUTS = new Set(["hero", "section", "bullets", "split", "quote", "metrics", "closing", "sources"]);
+
+/** Префикс для GitHub Pages (username.github.io/RepoName/). */
+function appPath(path) {
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  if (!location.hostname.endsWith("github.io")) return normalized;
+  const repo = location.pathname.split("/").filter(Boolean)[0];
+  return repo ? `/${repo}${normalized}` : normalized;
+}
 const SpeechCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 const state = {
@@ -325,7 +333,7 @@ async function send() {
   renderAll();
 
   try {
-    const response = await fetch("/api/compose", {
+    const response = await fetch(appPath("/api/compose"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -408,7 +416,7 @@ function exitPresent() {
 async function downloadDeck() {
   if (!state.deck) return;
   try {
-    const response = await fetch("/slides.css");
+    const response = await fetch(appPath("/slides.css"));
     if (!response.ok) throw new Error("Не удалось прочитать стили слайдов.");
     const css = await response.text();
     const blob = new Blob([standaloneHtml(state.deck, css)], { type: "text/html;charset=utf-8" });

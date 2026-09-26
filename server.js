@@ -151,7 +151,7 @@ app.use("/api", (_req, res) => {
   res.status(404).json({ error: "Нет такого метода." });
 });
 
-app.use(express.static(path.join(root, "public")));
+app.use(express.static(path.join(root, "docs")));
 
 app.use((error, _req, res, next) => {
   if (error?.type === "entity.parse.failed") {
