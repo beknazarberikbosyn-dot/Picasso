@@ -20,6 +20,25 @@ function appPath(path) {
   const repo = location.pathname.split("/").filter(Boolean)[0];
   return repo ? `/${repo}${normalized}` : normalized;
 }
+
+function usesBrowserCompose() {
+  return location.hostname.endsWith("github.io");
+}
+
+async function requestCompose(payload) {
+  if (!usesBrowserCompose()) {
+    const response = await fetch(appPath("/api/compose"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Не удалось собрать презентацию.");
+    return data;
+  }
+  const { composePresentation } = await import("./lib/compose.js");
+  return composePresentation(payload);
+}
 const SpeechCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 const state = {
@@ -333,18 +352,12 @@ async function send() {
   renderAll();
 
   try {
-    const response = await fetch(appPath("/api/compose"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messages: state.messages
-          .filter((item) => item.role === "user" || item.role === "assistant")
-          .map((item) => ({ role: item.role, content: item.content })),
-        deck: state.deck,
-      }),
+    const data = await requestCompose({
+      messages: state.messages
+        .filter((item) => item.role === "user" || item.role === "assistant")
+        .map((item) => ({ role: item.role, content: item.content })),
+      deck: state.deck,
     });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || "Не удалось собрать презентацию.");
     if (!data.deck?.slides?.length) throw new Error("В ответе не было слайдов.");
     state.messages.push({ role: "assistant", content: data.reply || "Презентация готова." });
     state.deck = data.deck;
