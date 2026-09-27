@@ -11,12 +11,12 @@
 
 Проверка: `curl https://ВАШ-домен.railway.app/api/health`
 
-## Vercel (статика из `docs/` + serverless API)
+## Vercel (сайт и API на одном домене)
 
 1. [vercel.com](https://vercel.com) → **Add New Project** → импорт репозитория Picasso.
-2. Настройки сборки подставятся из `vercel.json` (`outputDirectory`: `docs`).
+2. Сборка берётся из `vercel.json`: статика копируется из `docs/` в `public/`, API остаётся в `api/`.
 3. **Environment Variables**: при необходимости `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`.
-4. После деплоя скопируйте URL проекта (например `https://picasso.vercel.app`).
+4. После деплоя откройте URL проекта (например `https://picasso-fawn.vercel.app`).
 
 **Вариант A — всё на Vercel:** открывайте сайт по URL Vercel; `config.json` можно оставить пустым — API на том же домене.
 

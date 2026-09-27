@@ -1,9 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "outputDirectory": "docs",
+  "buildCommand": "node scripts/prepare-vercel.mjs",
   "functions": {
     "api/**/*.js": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "excludeFiles": "public/**"
     }
   }
 }
