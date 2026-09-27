@@ -1,4 +1,22 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "node scripts/prepare-vercel.mjs"
+  "functions": {
+    "api/site.js": {
+      "includeFiles": "{public,docs}/**",
+      "maxDuration": 10
+    },
+    "api/compose.js": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    { "source": "/", "destination": "/api/site?path=index.html" },
+    { "source": "/index.html", "destination": "/api/site?path=index.html" },
+    { "source": "/app.js", "destination": "/api/site?path=app.js" },
+    { "source": "/style.css", "destination": "/api/site?path=style.css" },
+    { "source": "/slides.css", "destination": "/api/site?path=slides.css" },
+    { "source": "/favicon.svg", "destination": "/api/site?path=favicon.svg" },
+    { "source": "/config.json", "destination": "/api/site?path=config.json" },
+    { "source": "/lib/:file", "destination": "/api/site?path=lib/:file" }
+  ]
 }
