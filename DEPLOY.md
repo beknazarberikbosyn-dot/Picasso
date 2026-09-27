@@ -14,7 +14,7 @@
 ## Vercel (сайт и API на одном домене)
 
 1. [vercel.com](https://vercel.com) → **Add New Project** → импорт репозитория Picasso.
-2. В **Settings → Build and Deployment** выключите Override у **Build Command** и **Output Directory**. Сборка задана в `vercel.json`: страница из `docs/`, API из `api/`.
+2. В **Settings → Build and Deployment** выключите Override у **Build Command** и **Output Directory**. Страница берётся из `public` (ссылка на `docs/`), API — из папки `api/`.
 3. **Environment Variables**: при необходимости `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`.
 4. После деплоя откройте URL проекта (например `https://picasso-fawn.vercel.app`). Проверка: `/api/health` отвечает `{"ok":true,"ready":true}`.
 
