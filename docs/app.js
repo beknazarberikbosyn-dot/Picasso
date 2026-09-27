@@ -21,13 +21,39 @@ function appPath(path) {
   return repo ? `/${repo}${normalized}` : normalized;
 }
 
-function usesBrowserCompose() {
-  return location.hostname.endsWith("github.io");
+let remoteApiBasePromise = null;
+
+/** URL бэкенда из config.json или meta picasso-api (Vercel / Railway). */
+function loadRemoteApiBase() {
+  if (!remoteApiBasePromise) {
+    remoteApiBasePromise = (async () => {
+      const meta = document.querySelector('meta[name="picasso-api"]')?.content?.trim();
+      if (meta) return meta.replace(/\/$/, "");
+      try {
+        const response = await fetch(appPath("/config.json"), { cache: "no-store" });
+        if (!response.ok) return "";
+        const config = await response.json();
+        const base = config?.apiBase;
+        return typeof base === "string" && base.trim() ? base.trim().replace(/\/$/, "") : "";
+      } catch {
+        return "";
+      }
+    })();
+  }
+  return remoteApiBasePromise;
+}
+
+function composeApiUrl(remoteBase) {
+  if (remoteBase) return `${remoteBase}/api/compose`;
+  if (location.hostname.endsWith("github.io")) return "";
+  return appPath("/api/compose");
 }
 
 async function requestCompose(payload) {
-  if (!usesBrowserCompose()) {
-    const response = await fetch(appPath("/api/compose"), {
+  const remoteBase = await loadRemoteApiBase();
+  const url = composeApiUrl(remoteBase);
+  if (url) {
+    const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

@@ -2,10 +2,11 @@ import "dotenv/config";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { composePresentation } from "./docs/lib/compose.js";
-import { serverCredsFromEnv } from "./docs/lib/llm.js";
+import { apiErrorResponse, getHealth, postCompose } from "./docs/lib/api-routes.js";
+import { CORS_HEADERS } from "./docs/lib/cors.js";
 
 const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || (process.env.PORT ? "0.0.0.0" : "127.0.0.1");
 const root = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
@@ -14,25 +15,26 @@ app.use((_req, res, next) => {
   res.set("Cache-Control", "no-store");
   next();
 });
+app.use((req, res, next) => {
+  for (const [key, value] of Object.entries(CORS_HEADERS)) {
+    res.setHeader(key, value);
+  }
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, ready: true });
+  res.json(getHealth());
 });
 
 app.post("/api/compose", async (req, res) => {
   try {
-    const creds = serverCredsFromEnv();
-    if (!creds.apiKey && !creds.builtin) {
-      return res.status(500).json({ error: "Модель на сервере не настроена." });
-    }
-    const result = await composePresentation(req.body, creds);
+    const result = await postCompose(req.body);
     res.json(result);
   } catch (error) {
-    const status = Number.isInteger(error.status) ? error.status : 500;
     console.error(error.message);
-    res.status(status >= 400 && status < 600 ? status : 500).json({
-      error: error.message || "Не получилось собрать презентацию.",
-    });
+    const { status, body } = apiErrorResponse(error);
+    res.status(status).json(body);
   }
 });
 
@@ -49,9 +51,10 @@ app.use((error, _req, res, next) => {
   return next(error);
 });
 
-const server = app.listen(PORT, "127.0.0.1");
+const server = app.listen(PORT, HOST);
 server.on("listening", () => {
-  console.log(`Picasso → http://127.0.0.1:${PORT}`);
+  const host = HOST === "0.0.0.0" ? "127.0.0.1" : HOST;
+  console.log(`Picasso → http://${host}:${PORT}`);
 });
 server.on("error", (error) => {
   console.error(error.code === "EADDRINUSE" ? `Порт ${PORT} занят.` : error.message);
