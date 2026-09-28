@@ -64,7 +64,7 @@ async function callOnce(creds, messages, extra) {
       headers,
       body: JSON.stringify({
         model: creds.model,
-        temperature: 0.7,
+        temperature: 0.4,
         messages,
         ...extra,
       }),

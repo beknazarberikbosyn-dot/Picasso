@@ -179,7 +179,7 @@ export function finishDeck(deck, { materials, flags }) {
     slide.links = slide.links.filter((link) => allowedLinks.has(link.url));
   }
 
-  if (!flags.dark && luma(deck.theme.bg) < 0.18) {
+  if (!flags.dark && luma(deck.theme.bg) < 0.42) {
     const accent = contrast("#f7f1e8", deck.theme.accent) >= 2.4 ? deck.theme.accent : "#c4502a";
     deck.theme = normalizeTheme({
       mode: "light",
@@ -234,18 +234,25 @@ export function finishDeck(deck, { materials, flags }) {
       sources.links.push({ title: link.title, url: link.url, note: link.note || "" });
       seen.add(link.url);
     }
+    deck.slides = deck.slides.filter((slide) => slide !== sources);
+    deck.slides.push(sources);
   }
 
   if (facts.length) {
+    const hero = deck.slides.find((slide) => slide.layout === "hero");
+    if (hero && (!hero.subtitle || vague(hero.subtitle))) hero.subtitle = facts[0].text;
     let cursor = 0;
     for (const slide of deck.slides) {
       if (["hero", "closing", "sources", "quote"].includes(slide.layout)) continue;
       const blob = `${slide.title} ${slide.subtitle} ${slide.body} ${slide.bullets.join(" ")}`;
-      if (usesFact(blob, facts) || !thin(slide)) continue;
-      const fact = facts[cursor++];
+      if (usesFact(blob, facts) && !thin(slide)) continue;
+      const fact = facts[cursor % facts.length];
+      cursor += 1;
       if (!fact) break;
-      if (slide.bullets.length < 5) slide.bullets.push(fact.text);
-      else slide.body = fact.text;
+      if (vague(slide.body) || !slide.body) slide.body = fact.text;
+      if (!slide.bullets.some((item) => item.includes(fact.text.slice(0, 24)))) {
+        slide.bullets = [fact.text, ...slide.bullets.filter((item) => !vague(item))].slice(0, 5);
+      }
     }
   }
 
@@ -273,7 +280,13 @@ function blankSlide(layout) {
 
 function thin(slide) {
   const text = `${slide.body} ${slide.bullets.join(" ")} ${slide.aside}`.replace(/\s+/g, " ").trim();
-  return text.length < 80;
+  return text.length < 80 || vague(text);
+}
+
+function vague(text) {
+  return /это не просто|в современном мире|откройте для себя|путешествие в мир|играет важную роль|нельзя недооценивать|уникальн\p{L}*|инновац\p{L}*|искусство и вкус/iu.test(
+    String(text || ""),
+  );
 }
 
 function usesFact(blob, facts) {

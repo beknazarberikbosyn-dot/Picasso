@@ -72,8 +72,11 @@ export async function composePresentation(body, credsOverride) {
   }
 
   const deck = finishDeck(normalizeDeck(parsed), { materials, flags });
-  const reply =
+  let reply =
     (typeof parsed.reply === "string" ? parsed.reply : "").replace(/\s+/g, " ").trim().slice(0, 600) ||
     "Презентация готова. Можно попросить правки словами.";
+  if ((flags.sources || flags.images) && !materials.facts.length && !materials.images.length) {
+    reply = `${reply} Открытые страницы по этой теме не нашлись, поэтому ссылки и картинки не из чего было взять.`.slice(0, 600);
+  }
   return { reply, deck };
 }

@@ -1,24 +1,35 @@
-const UA = "Picasso/1.0 (local presentation studio; educational)";
+const UA = "Picasso/1.0 (https://github.com/beknazarberikbosyn-dot/Picasso; educational presentation studio)";
 
 export async function gather(rawQuery) {
   const query = String(rawQuery || "").replace(/\s+/g, " ").trim().slice(0, 140);
   if (query.length < 2) return { facts: [], images: [], links: [] };
 
+  let result = await gatherOnce(query);
+  if (!result.facts.length && !result.images.length) {
+    const short = query.split(/\s+/).slice(0, 2).join(" ");
+    if (short.length >= 2 && short !== query) result = await gatherOnce(short);
+  }
+  return result;
+}
+
+async function gatherOnce(query) {
   const [ru, en, photos] = await Promise.all([
     wiki("https://ru.wikipedia.org", query),
     wiki("https://en.wikipedia.org", query),
     commons(query),
   ]);
 
-  const pages = uniqueBy([...ru, ...en], (page) => page.url)
-    .filter((page) => matchesQuery(`${page.title} ${page.fact}`, query))
-    .slice(0, 4);
-  const images = uniqueBy(
+  const found = uniqueBy([...ru, ...en], (page) => page.url);
+  const matchedPages = found.filter((page) => matchesQuery(`${page.title} ${page.fact}`, query));
+  const pages = (matchedPages.length ? matchedPages : found).slice(0, 4);
+  const foundImages = uniqueBy(
     [...pages.flatMap((page) => (page.image ? [page.image] : [])), ...photos],
     (image) => image.key,
-  )
-    .filter((image) => matchesQuery(`${image.title} ${image.page}`, query) || pages.some((page) => page.image?.key === image.key))
-    .slice(0, 4);
+  );
+  const matchedImages = foundImages.filter(
+    (image) => matchesQuery(`${image.title} ${image.page}`, query) || pages.some((page) => page.image?.key === image.key),
+  );
+  const images = (matchedImages.length ? matchedImages : foundImages).slice(0, 4);
   const links = pages.map((page) => ({ title: page.title, url: page.url, note: "статья" }));
   for (const image of images) {
     if (!image.page || links.some((link) => link.url === image.page)) continue;
@@ -54,7 +65,7 @@ export function readFlags(text) {
   return {
     images: /картин|изображен|иллюстрац|фото|picture|image|photo/i.test(value),
     sources: /источник|ссылк|посторон|потусторон|source|\blinks?\b/i.test(value),
-    dark: /т[её]мн|чёрн|черн|\bdark\b|\bblack\b/i.test(value),
+    dark: /(?:^|[^a-zа-яё])(?:т[её]мн\p{L}*|ч[её]рн\p{L}*|dark|black)(?=$|[^a-zа-яё])/iu.test(value),
   };
 }
 
@@ -82,6 +93,14 @@ export function materialsBrief(materials, flags) {
 }
 
 async function wiki(origin, query) {
+  try {
+    return await wikiPages(origin, query);
+  } catch {
+    return [];
+  }
+}
+
+async function wikiPages(origin, query) {
   const url = new URL("/w/api.php", origin);
   url.search = new URLSearchParams({
     action: "query",
@@ -119,6 +138,14 @@ async function wiki(origin, query) {
 }
 
 async function commons(query) {
+  try {
+    return await commonsPhotos(query);
+  } catch {
+    return [];
+  }
+}
+
+async function commonsPhotos(query) {
   const url = new URL("https://commons.wikimedia.org/w/api.php");
   url.search = new URLSearchParams({
     action: "query",
@@ -156,7 +183,7 @@ async function commons(query) {
 async function getJson(url) {
   const response = await fetch(url, {
     headers: { "User-Agent": UA, Accept: "application/json" },
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(12000),
   });
   if (!response.ok) throw new Error(`Материалы ответили с кодом ${response.status}.`);
   return response.json();
