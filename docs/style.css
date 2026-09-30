@@ -348,6 +348,8 @@ textarea {
   position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   background:
     radial-gradient(900px 420px at 50% 38%, rgba(255, 90, 54, 0.08), transparent 62%),
     #1a1714;
@@ -485,6 +487,124 @@ textarea {
 
 .chips button:hover {
   border-color: var(--accent);
+}
+
+/* ---------- Выбор шаблона ---------- */
+.picker {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px 28px 28px;
+  overflow: auto;
+}
+
+.picker-head h2 {
+  margin: 0 0 6px;
+  font-size: clamp(26px, 3vw, 36px);
+}
+
+.picker-head p {
+  margin: 0;
+  color: #c9bfb4;
+  line-height: 1.45;
+}
+
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 18px;
+}
+
+.tpl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.tpl-card:hover,
+.tpl-card:focus-visible {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.tpl-card.is-current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.tpl-shots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.tpl-shot {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+
+.tpl-shot.is-main {
+  grid-column: 1 / -1;
+}
+
+.tpl-shot .slide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: scale(var(--shot, 0.2));
+  transform-origin: top left;
+  pointer-events: none;
+}
+
+.tpl-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 2px 2px 4px;
+}
+
+.tpl-meta strong {
+  font-size: 17px;
+}
+
+.tpl-meta em {
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  vertical-align: 2px;
+}
+
+.tpl-meta span {
+  color: #b7aea4;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.picker-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+#pickerAuto {
+  padding: 10px 16px;
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
 }
 
 .viewport {

@@ -2,6 +2,7 @@ import { deckLooksEmpty, emptySlides, finishDeck, normalizeDeck, parseModelJson 
 import { gather, intentBrief, materialsBrief, readFlags, searchQuery } from "./research.js";
 import { completeRespectingLimit, resolveCreds, serverCredsFromEnv } from "./llm.js";
 import { SYSTEM_PROMPT } from "./prompt.js";
+import { isTemplate, templateById } from "./templates.js";
 
 function sanitizeHistory(list) {
   if (!Array.isArray(list)) return [];
@@ -80,7 +81,18 @@ export async function composePresentation(body, credsOverride) {
 
   if (materials.links.length && (flags.sources || !current)) flags.sources = true;
 
+  const template = isTemplate(body?.template) ? body.template : current?.template;
+  const topic = current?.topic || userTexts[0] || lastUser;
+  const colorRequest = /цвет|палитр|фон|оттен|т[её]мн|светл|colou?r|palette|background/iu.test(lastUser);
+  const keepColors = Boolean(current && (colorRequest || current.customColors));
+
   let system = SYSTEM_PROMPT + intentBrief(lastUser) + materialsBrief(materials, flags);
+  if (template) {
+    const chosen = templateById(template);
+    system +=
+      `\n\nШАБЛОН «${chosen.name}» выбран человеком. ${chosen.hint}` +
+      (keepColors ? "" : " Цвета и шрифты задаёт шаблон — в theme верни что угодно, сосредоточься на содержании.");
+  }
   if (current) {
     system += `\n\nТекущая презентация. Верни полную колоду после правки:\n${JSON.stringify(current)}`;
   }
@@ -118,7 +130,8 @@ export async function composePresentation(body, credsOverride) {
     }
   }
 
-  deck = finishDeck(deck, { materials, flags });
+  deck = finishDeck(deck, { materials, flags, template, topic, keepColors });
+  if (keepColors && template) deck.customColors = true;
   let reply =
     (typeof parsed.reply === "string" ? parsed.reply : "").replace(/\s+/g, " ").trim().slice(0, 600) ||
     "Презентация готова. Можно попросить правки словами.";

@@ -8,6 +8,8 @@
   background: var(--bg);
   color: var(--ink);
   font-family: var(--slide-font);
+  --text-font: Outfit, "Avenir Next", "Segoe UI", sans-serif;
+  --display-font: Fraunces, Georgia, serif;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 14%, transparent);
 }
 
@@ -26,7 +28,7 @@
 .author,
 .metric span,
 .slide-foot {
-  font-family: Outfit, "Avenir Next", "Segoe UI", sans-serif;
+  font-family: var(--text-font);
 }
 
 .kicker {
@@ -178,7 +180,7 @@
   top: -24px;
   right: 36px;
   margin: 0;
-  font-family: Fraunces, Georgia, serif;
+  font-family: var(--display-font);
   font-size: 200px;
   line-height: 0.8;
   color: var(--accent);
@@ -231,14 +233,14 @@
   align-items: flex-end;
   background: var(--soft);
   color: var(--ink);
-  font-family: Fraunces, Georgia, serif;
+  font-family: var(--display-font);
   font-size: 32px;
   line-height: 1.3;
 }
 
 .quote-mark {
   margin: 0;
-  font-family: Fraunces, Georgia, serif;
+  font-family: var(--display-font);
   font-size: 120px;
   line-height: 0.7;
   color: var(--accent);
@@ -274,7 +276,7 @@ blockquote.is-long {
 
 .metric strong {
   display: block;
-  font-family: Fraunces, Georgia, serif;
+  font-family: var(--display-font);
   font-size: 68px;
   font-weight: 560;
   letter-spacing: -0.04em;
@@ -412,7 +414,7 @@ blockquote.is-long {
 .photo-frame figcaption {
   padding: 12px 16px 14px;
   color: #f6f1e8;
-  font-family: Outfit, "Avenir Next", "Segoe UI", sans-serif;
+  font-family: var(--text-font);
   font-size: 14px;
   line-height: 1.35;
 }
@@ -431,4 +433,582 @@ blockquote.is-long {
 
 .layout-closing .points li {
   font-size: 24px;
+}
+
+/* ================= Шаблоны оформления (.tpl-*) =================
+   «Журнал» (editorial) — базовые стили выше. Остальные меняют шрифты,
+   размер текста, декор и место фотографии. */
+
+.tpl-swiss,
+.tpl-poster,
+.tpl-minimal,
+.tpl-neon,
+.tpl-playful {
+  isolation: isolate;
+}
+
+/* ---------- Швейцарский ---------- */
+.tpl-swiss {
+  --slide-font: Manrope, "Helvetica Neue", Arial, sans-serif;
+  --text-font: Manrope, "Helvetica Neue", Arial, sans-serif;
+  --display-font: Manrope, "Helvetica Neue", Arial, sans-serif;
+  padding: 72px 80px 96px 112px;
+}
+
+.tpl-swiss::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: 28px;
+  background: var(--accent);
+}
+
+.tpl-swiss .slide-title {
+  font-weight: 800;
+  letter-spacing: -0.05em;
+}
+
+.tpl-swiss.layout-hero .slide-title {
+  font-size: 84px;
+}
+
+.tpl-swiss .kicker {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.tpl-swiss .points li {
+  grid-template-columns: 28px 1fr;
+  font-size: 26px;
+  font-weight: 500;
+}
+
+.tpl-swiss .points li::before {
+  width: 28px;
+  height: 4px;
+  margin-top: 17px;
+}
+
+.tpl-swiss .slide-foot {
+  left: 112px;
+}
+
+.tpl-swiss .mark,
+.tpl-swiss .ghost-num {
+  display: none;
+}
+
+.tpl-swiss.layout-hero.has-photo > .slide-photo,
+.tpl-swiss.layout-section.has-photo > .slide-photo {
+  left: auto;
+  width: 46%;
+}
+
+.tpl-swiss.has-photo::after {
+  display: none;
+}
+
+.tpl-swiss.layout-hero.has-photo .hero-copy,
+.tpl-swiss.layout-section.has-photo .hero-copy {
+  max-width: 50%;
+}
+
+.tpl-swiss .split-grid {
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 48px;
+}
+
+.tpl-swiss .split-grid > :last-child {
+  order: -1;
+}
+
+.tpl-swiss .photo-frame {
+  background: var(--ink);
+}
+
+.tpl-swiss .aside {
+  background: var(--ink);
+  color: var(--bg);
+  font-weight: 700;
+}
+
+.tpl-swiss .metric strong {
+  font-weight: 800;
+}
+
+/* ---------- Плакат ---------- */
+.tpl-poster {
+  --slide-font: Unbounded, "Arial Black", sans-serif;
+  --display-font: Unbounded, "Arial Black", sans-serif;
+  --text-font: Manrope, "Helvetica Neue", Arial, sans-serif;
+}
+
+.tpl-poster .slide-title {
+  font-size: 60px;
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+
+.tpl-poster.layout-bullets .slide-title,
+.tpl-poster.layout-split .slide-title,
+.tpl-poster.layout-metrics .slide-title,
+.tpl-poster.layout-sources .slide-title {
+  font-size: 40px;
+}
+
+.tpl-poster .slide-title.is-long {
+  font-size: 34px;
+}
+
+.tpl-poster.layout-hero .slide-title.is-long,
+.tpl-poster.layout-closing .slide-title.is-long {
+  font-size: 46px;
+}
+
+.tpl-poster.layout-hero,
+.tpl-poster.layout-closing,
+.tpl-poster.layout-section {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.tpl-poster.layout-hero .kicker,
+.tpl-poster.layout-closing .kicker,
+.tpl-poster.layout-section .kicker,
+.tpl-poster.layout-hero .subtitle,
+.tpl-poster.layout-closing .subtitle,
+.tpl-poster.layout-section .subtitle,
+.tpl-poster.layout-hero .slide-foot,
+.tpl-poster.layout-closing .slide-foot,
+.tpl-poster.layout-section .slide-foot,
+.tpl-poster.layout-closing .points li {
+  color: var(--bg);
+}
+
+.tpl-poster.layout-closing .bar,
+.tpl-poster.layout-closing .points li::before {
+  background: var(--bg);
+}
+
+.tpl-poster.has-photo::after {
+  background: var(--accent);
+  opacity: 0.72;
+  mix-blend-mode: multiply;
+}
+
+.tpl-poster .mark i {
+  border-radius: 50%;
+}
+
+.tpl-poster.layout-hero .mark i:nth-child(1) {
+  background: var(--bg);
+}
+
+.tpl-poster .ghost-num {
+  font-family: var(--display-font);
+  color: var(--bg);
+  opacity: 0.22;
+}
+
+.tpl-poster .kicker {
+  font-weight: 800;
+}
+
+.tpl-poster .points li {
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.tpl-poster .points li::before {
+  width: 16px;
+  height: 16px;
+  margin-top: 9px;
+  border-radius: 50%;
+}
+
+.tpl-poster .photo-frame {
+  margin: 0 18px 18px 0;
+  background: transparent;
+  box-shadow: 18px 18px 0 var(--accent);
+}
+
+.tpl-poster .photo-frame figcaption {
+  background: var(--ink);
+}
+
+.tpl-poster .aside {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 800;
+  font-size: 28px;
+}
+
+.tpl-poster .metric strong {
+  font-size: 76px;
+}
+
+/* ---------- Минимализм ---------- */
+.tpl-minimal {
+  --slide-font: Manrope, "Helvetica Neue", Arial, sans-serif;
+  --text-font: Manrope, "Helvetica Neue", Arial, sans-serif;
+  --display-font: Manrope, "Helvetica Neue", Arial, sans-serif;
+  padding: 96px 120px 116px;
+  box-shadow: none;
+}
+
+.tpl-minimal .slide-title {
+  font-size: 60px;
+  font-weight: 300;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+.tpl-minimal.layout-bullets .slide-title,
+.tpl-minimal.layout-split .slide-title,
+.tpl-minimal.layout-metrics .slide-title {
+  font-size: 40px;
+}
+
+.tpl-minimal .kicker {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.32em;
+  color: var(--muted);
+}
+
+.tpl-minimal .subtitle,
+.tpl-minimal .lede {
+  font-size: 22px;
+  font-weight: 300;
+}
+
+.tpl-minimal .points {
+  gap: 20px;
+}
+
+.tpl-minimal .points li {
+  grid-template-columns: 6px 1fr;
+  gap: 20px;
+  font-size: 23px;
+  font-weight: 300;
+  line-height: 1.45;
+}
+
+.tpl-minimal .points li::before {
+  width: 6px;
+  height: 6px;
+  margin-top: 14px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.tpl-minimal .mark,
+.tpl-minimal .ghost-num,
+.tpl-minimal .bar {
+  display: none;
+}
+
+.tpl-minimal .slide-foot {
+  right: 120px;
+  bottom: 40px;
+  left: 120px;
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  font-weight: 500;
+}
+
+.tpl-minimal.layout-hero.has-photo > .slide-photo,
+.tpl-minimal.layout-section.has-photo > .slide-photo {
+  inset: auto;
+  top: 96px;
+  right: 120px;
+  width: 420px;
+  height: 300px;
+  border-radius: 6px;
+}
+
+.tpl-minimal.has-photo::after {
+  display: none;
+}
+
+.tpl-minimal.layout-hero.has-photo .hero-copy,
+.tpl-minimal.layout-section.has-photo .hero-copy {
+  max-width: 620px;
+}
+
+.tpl-minimal .split-grid {
+  gap: 64px;
+}
+
+.tpl-minimal .photo-frame {
+  background: transparent;
+  border-radius: 6px;
+}
+
+.tpl-minimal .photo-frame .slide-photo {
+  border-radius: 6px;
+}
+
+.tpl-minimal .photo-frame figcaption {
+  padding: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.tpl-minimal .aside {
+  padding: 0 0 0 32px;
+  background: transparent;
+  border-left: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+  font-weight: 300;
+  align-items: center;
+}
+
+.tpl-minimal .metric strong {
+  font-weight: 300;
+  color: var(--ink);
+}
+
+.tpl-minimal .quote-mark {
+  color: var(--muted);
+}
+
+.tpl-minimal blockquote {
+  font-weight: 300;
+}
+
+/* ---------- Неон ---------- */
+.tpl-neon {
+  --slide-font: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --text-font: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --display-font: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --mono-font: "JetBrains Mono", Menlo, Consolas, monospace;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--ink) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ink) 6%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.tpl-neon .slide-title {
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.tpl-neon.layout-hero .slide-title,
+.tpl-neon.layout-closing .slide-title {
+  text-shadow: 0 0 36px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.tpl-neon .kicker,
+.tpl-neon .slide-foot,
+.tpl-neon .author,
+.tpl-neon .sources li > span:not(.source-name) {
+  font-family: var(--mono-font);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
+.tpl-neon .kicker::before {
+  content: "// ";
+}
+
+.tpl-neon .points li {
+  font-size: 26px;
+}
+
+.tpl-neon .points li::before {
+  content: "›";
+  width: auto;
+  height: auto;
+  margin-top: 0;
+  background: none;
+  color: var(--accent);
+  font-family: var(--mono-font);
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.tpl-neon .mark i {
+  box-shadow: 0 0 28px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.tpl-neon .mark i:nth-child(2) {
+  background: transparent;
+  border: 2px solid var(--accent);
+}
+
+.tpl-neon.layout-hero.has-photo > .slide-photo,
+.tpl-neon.layout-section.has-photo > .slide-photo {
+  left: auto;
+  width: 60%;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 45%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 45%);
+}
+
+.tpl-neon.has-photo::after {
+  display: none;
+}
+
+.tpl-neon.layout-hero.has-photo .hero-copy,
+.tpl-neon.layout-section.has-photo .hero-copy {
+  max-width: 58%;
+}
+
+.tpl-neon .photo-frame {
+  border: 2px solid var(--accent);
+  background: var(--bg);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 40%, transparent);
+  clip-path: polygon(0 0, calc(100% - 36px) 0, 100% 36px, 100% 100%, 36px 100%, 0 calc(100% - 36px));
+}
+
+.tpl-neon .photo-frame figcaption {
+  color: var(--muted);
+  font-family: var(--mono-font);
+  font-size: 13px;
+}
+
+.tpl-neon .aside {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid var(--accent);
+}
+
+.tpl-neon .metric strong {
+  font-family: var(--mono-font);
+  text-shadow: 0 0 30px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.tpl-neon .bar {
+  box-shadow: 0 0 24px var(--accent);
+}
+
+/* ---------- Яркий ---------- */
+.tpl-playful {
+  --slide-font: Nunito, "Trebuchet MS", sans-serif;
+  --text-font: Nunito, "Trebuchet MS", sans-serif;
+  --display-font: Nunito, "Trebuchet MS", sans-serif;
+}
+
+.tpl-playful::before {
+  content: "";
+  position: absolute;
+  right: -140px;
+  bottom: -180px;
+  z-index: -1;
+  width: 460px;
+  height: 460px;
+  border-radius: 50%;
+  background: var(--soft);
+}
+
+.tpl-playful .slide-title {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.tpl-playful .kicker {
+  display: inline-block;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.tpl-playful .points {
+  gap: 12px;
+}
+
+.tpl-playful .points li {
+  padding: 12px 20px;
+  border-radius: 20px;
+  background: var(--soft);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.tpl-playful .points li::before {
+  width: 14px;
+  height: 14px;
+  margin-top: 9px;
+  border-radius: 50%;
+}
+
+.tpl-playful .mark i {
+  border-radius: 50%;
+}
+
+.tpl-playful .mark i:nth-child(2) {
+  border-radius: 24px;
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.tpl-playful.layout-hero.has-photo > .slide-photo,
+.tpl-playful.layout-section.has-photo > .slide-photo {
+  inset: auto;
+  top: 72px;
+  right: 88px;
+  box-sizing: border-box;
+  width: 470px;
+  height: 420px;
+  border: 12px solid #fff;
+  border-radius: 36px;
+  box-shadow: 0 24px 50px rgba(0, 0, 0, 0.18);
+  transform: rotate(3deg);
+}
+
+.tpl-playful.has-photo::after {
+  display: none;
+}
+
+.tpl-playful.layout-hero.has-photo .hero-copy,
+.tpl-playful.layout-section.has-photo .hero-copy {
+  max-width: 620px;
+}
+
+.tpl-playful .photo-frame {
+  border: 12px solid #fff;
+  border-radius: 32px;
+  box-shadow: 0 20px 44px rgba(0, 0, 0, 0.16);
+  transform: rotate(2deg);
+}
+
+.tpl-playful .photo-frame figcaption {
+  background: #fff;
+  color: #333;
+  padding: 10px 6px 0;
+  font-weight: 700;
+}
+
+.tpl-playful .aside {
+  border-radius: 28px;
+  font-weight: 800;
+}
+
+.tpl-playful .metric {
+  padding: 22px;
+  border-radius: 24px;
+  background: var(--soft);
+}
+
+.tpl-playful .metric strong {
+  font-weight: 800;
+}
+
+.tpl-playful .bar {
+  border-radius: 99px;
+}
+
+/* Заглушка фото в превью шаблонов, пока настоящая картинка не загрузилась. */
+.slide-photo.is-placeholder {
+  background:
+    radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 55%, var(--bg)) 0 18%, transparent 19%),
+    linear-gradient(160deg, color-mix(in srgb, var(--accent) 70%, var(--ink)), color-mix(in srgb, var(--accent) 35%, var(--bg)));
 }

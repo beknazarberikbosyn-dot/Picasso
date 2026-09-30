@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,680;1,9..144,560&family=Outfit:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,680;1,9..144,560&family=Outfit:wght@400;500;600&family=Manrope:wght@300;500;700;800&family=Unbounded:wght@600;800&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@500&family=Nunito:wght@600;700;800&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="slides.css" />
@@ -31,6 +31,7 @@
         </div>
         <div class="actions">
           <button type="button" id="newDeck" class="ghost">Новая</button>
+          <button type="button" id="templateBtn" class="ghost" disabled>Шаблон</button>
           <button type="button" id="present" class="ghost" disabled>Показ</button>
           <button type="button" id="download" class="ghost" disabled>Скачать</button>
         </div>
@@ -82,6 +83,17 @@
                 а потом поправит их по следующей фразе.
               </p>
               <div class="chips" id="chips"></div>
+            </div>
+            <div class="picker" id="picker" hidden>
+              <div class="picker-head">
+                <h2>Выберите шаблон</h2>
+                <p id="pickerNote">Цвета подобраны под тему.</p>
+              </div>
+              <div class="picker-grid" id="pickerGrid"></div>
+              <div class="picker-foot">
+                <button type="button" id="pickerAuto">Пусть Picasso выберет</button>
+                <button type="button" id="pickerCancel" class="ghost" hidden>Оставить как есть</button>
+              </div>
             </div>
             <div class="composing" id="composing" hidden>
               <div class="cubes" aria-hidden="true"><span></span><span></span><span></span></div>

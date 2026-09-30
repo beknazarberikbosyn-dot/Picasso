@@ -1,3 +1,5 @@
+import { isTemplate, templateTheme } from "./templates.js";
+
 const LAYOUTS = new Set(["hero", "section", "bullets", "split", "quote", "metrics", "closing", "sources"]);
 
 function asText(value, max) {
@@ -41,7 +43,7 @@ function mix(a, b, amount) {
   return `#${[channel(16), channel(8), channel(0)].map((part) => part.toString(16).padStart(2, "0")).join("")}`;
 }
 
-function normalizeTheme(raw) {
+export function normalizeTheme(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
   const dark = source.mode === "dark";
   const fallback = dark
@@ -213,10 +215,14 @@ export function normalizeDeck(input) {
   if (!slides.length) throw new Error("В ответе не было слайдов.");
   const title = asText(root.title, 80) || slides[0].title || "Презентация";
   if (!slides[0].title) slides[0].title = title;
-  return { title, theme: normalizeTheme(root.theme), slides };
+  const deck = { title, theme: normalizeTheme(root.theme), slides };
+  if (isTemplate(root.template)) deck.template = root.template;
+  if (root.customColors === true) deck.customColors = true;
+  if (typeof root.topic === "string" && root.topic.trim()) deck.topic = root.topic.trim().slice(0, 300);
+  return deck;
 }
 
-export function finishDeck(deck, { materials, flags }) {
+export function finishDeck(deck, { materials, flags, template, topic, keepColors }) {
   const facts = materials?.facts || [];
   const images = materials?.images || [];
   const links = materials?.links || [];
@@ -231,7 +237,12 @@ export function finishDeck(deck, { materials, flags }) {
     slide.links = slide.links.filter((link) => allowedLinks.has(link.url));
   }
 
-  if (!flags.dark && luma(deck.theme.bg) < 0.42) {
+  if (isTemplate(template)) {
+    deck.template = template;
+    if (topic) deck.topic = String(topic).slice(0, 300);
+    // Цвета шаблона подобраны под тему. Если человек сам попросил цвета — оставляем их.
+    if (!keepColors) deck.theme = normalizeTheme(templateTheme(template, deck.topic || deck.title));
+  } else if (!flags.dark && luma(deck.theme.bg) < 0.42) {
     const accent = contrast("#f7f1e8", deck.theme.accent) >= 2.4 ? deck.theme.accent : "#c4502a";
     deck.theme = normalizeTheme({
       mode: "light",

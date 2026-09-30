@@ -1,9 +1,15 @@
+import { TEMPLATES, recommendTemplates, templateById, templateTheme } from "./lib/templates.js";
+import { normalizeTheme } from "./lib/deck.js";
+
 const EXAMPLES = [
   "Питч стартапа для инвесторов: 8 слайдов, уверенно, мало текста, тёмный фон",
   "Урок о Солнечной системе для 5 класса, ярко и понятно",
   "Квартальный отчёт: выручка, три риска и план, спокойная светлая палитра",
   "Доклад про город будущего, вдохновляюще, крупные заголовки с засечками и цитата в середине",
 ];
+
+const FONTS_URL =
+  "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,680;1,9..144,560&family=Outfit:wght@400;500;600&family=Manrope:wght@300;500;700;800&family=Unbounded:wght@600;800&family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@500&family=Nunito:wght@600;700;800&display=swap";
 
 const WELCOME = {
   role: "local",
@@ -73,6 +79,9 @@ const state = {
   index: 0,
   busy: false,
   listening: false,
+  template: null,
+  picking: false,
+  previewPhoto: "",
 };
 
 let lang = loadLang();
@@ -88,6 +97,12 @@ const els = {
   deckName: document.getElementById("deckName"),
   swatches: document.getElementById("swatches"),
   newDeck: document.getElementById("newDeck"),
+  templateBtn: document.getElementById("templateBtn"),
+  picker: document.getElementById("picker"),
+  pickerGrid: document.getElementById("pickerGrid"),
+  pickerNote: document.getElementById("pickerNote"),
+  pickerAuto: document.getElementById("pickerAuto"),
+  pickerCancel: document.getElementById("pickerCancel"),
   present: document.getElementById("present"),
   download: document.getElementById("download"),
   thread: document.getElementById("thread"),
@@ -123,6 +138,7 @@ applyLang();
 renderAll();
 forgetSavedKey();
 new ResizeObserver(() => fit()).observe(els.viewport);
+new ResizeObserver(() => fitShots()).observe(els.pickerGrid);
 
 function bind() {
   for (const example of EXAMPLES) {
@@ -156,6 +172,12 @@ function bind() {
   els.langRu.addEventListener("click", () => setLang("ru-RU"));
   els.langEn.addEventListener("click", () => setLang("en-US"));
   els.newDeck.addEventListener("click", resetDeck);
+  els.templateBtn.addEventListener("click", openPicker);
+  els.pickerAuto.addEventListener("click", () => pickTemplate(recommendTemplates(topicText())[0]));
+  els.pickerCancel.addEventListener("click", () => {
+    state.picking = false;
+    renderAll();
+  });
   els.present.addEventListener("click", togglePresent);
   els.download.addEventListener("click", downloadDeck);
   els.prev.addEventListener("click", () => step(-1));
@@ -229,6 +251,8 @@ function loadSession() {
         .slice(-40);
       if (messages.length) state.messages = messages;
     }
+    if (typeof data.template === "string") state.template = data.template;
+    if (data.picking === true) state.picking = true;
     if (data.deck && Array.isArray(data.deck.slides) && data.deck.theme?.bg) {
       state.deck = data.deck;
       state.index = Number.isInteger(data.index) ? data.index : 0;
@@ -242,7 +266,13 @@ function saveSession() {
   try {
     localStorage.setItem(
       "picasso-session",
-      JSON.stringify({ messages: state.messages, deck: state.deck, index: state.index }),
+      JSON.stringify({
+        messages: state.messages,
+        deck: state.deck,
+        index: state.index,
+        template: state.template,
+        picking: state.picking,
+      }),
     );
   } catch {
     /* private mode or a full disk */
@@ -280,12 +310,15 @@ function paintThread() {
 
 function paintStage() {
   const deck = state.deck;
-  els.empty.hidden = state.busy || Boolean(deck);
+  const picking = state.picking && !state.busy;
+  els.picker.hidden = !picking;
+  els.empty.hidden = state.busy || Boolean(deck) || picking;
   els.composing.hidden = !(state.busy && !deck);
-  els.viewport.hidden = !deck;
-  els.strip.hidden = !deck;
-  els.notesBar.hidden = !deck;
-  if (!deck) return;
+  els.viewport.hidden = !deck || picking;
+  els.strip.hidden = !deck || picking;
+  els.notesBar.hidden = !deck || picking;
+  if (picking) paintPicker();
+  if (!deck || picking) return;
 
   if (state.index >= deck.slides.length) state.index = deck.slides.length - 1;
   if (state.index < 0) state.index = 0;
@@ -332,6 +365,7 @@ function paintChrome() {
   els.send.disabled = state.busy;
   els.mic.disabled = state.busy || !SpeechCtor;
   els.present.disabled = !deck;
+  els.templateBtn.disabled = !deck || state.busy;
   els.download.disabled = !deck;
   els.prev.disabled = !deck;
   els.next.disabled = !deck;
@@ -370,10 +404,32 @@ async function send() {
     return;
   }
 
-  state.busy = true;
   state.messages.push({ role: "user", content: text });
   els.prompt.value = "";
   grow();
+  forceScroll = true;
+
+  // Первая просьба: сначала человек выбирает шаблон, потом собираем слайды.
+  if (!state.deck && !state.template) {
+    if (!state.picking) {
+      state.messages.push({
+        role: "local",
+        content:
+          "Выберите шаблон: у каждого свои шрифты, размер текста и место для фото, а цвета подобраны под вашу тему. Можно дописать детали — я их учту.",
+      });
+    }
+    state.picking = true;
+    renderAll();
+    loadPreviewPhoto();
+    return;
+  }
+
+  await compose(text);
+}
+
+async function compose(retryText = "") {
+  state.busy = true;
+  state.picking = false;
   forceScroll = true;
   renderAll();
 
@@ -383,6 +439,7 @@ async function send() {
         .filter((item) => item.role === "user" || item.role === "assistant")
         .map((item) => ({ role: item.role, content: item.content })),
       deck: state.deck,
+      template: state.deck?.template || state.template || undefined,
     });
     if (!data.deck?.slides?.length) throw new Error("В ответе не было слайдов.");
     state.messages.push({ role: "assistant", content: data.reply || "Презентация готова." });
@@ -390,13 +447,162 @@ async function send() {
     state.index = Math.min(state.index, data.deck.slides.length - 1);
     forceScroll = true;
   } catch (error) {
-    state.messages.pop();
-    els.prompt.value = text;
-    grow();
+    if (retryText && state.messages.at(-1)?.role === "user") {
+      state.messages.pop();
+      els.prompt.value = retryText;
+      grow();
+    }
+    if (!state.deck && !retryText) {
+      // Не собралось с первого раза — возвращаем выбор шаблона, чтобы можно было нажать ещё раз.
+      state.template = null;
+      state.picking = true;
+    }
     toast(error.message || "Не получилось собрать презентацию.");
   } finally {
     state.busy = false;
     renderAll();
+  }
+}
+
+function topicText() {
+  return state.deck?.topic || state.messages.find((item) => item.role === "user")?.content || state.deck?.title || "";
+}
+
+function previewTitle(text) {
+  let title = String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/^(?:сделай|создай|собери|нужна|хочу|подготовь)?\s*(?:мне\s+)?(?:презентаци\p{L}*|доклад|урок|слайды)?\s*(?:(?:на\s+тему|про|об?|по)\s+)?/iu, "")
+    .split(/[,.;:!?]/)[0]
+    .trim();
+  if (!title) title = state.deck?.title || "Ваша тема";
+  if (title.length > 44) title = `${title.slice(0, 44).replace(/\s+\S*$/, "")}…`;
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}
+
+async function loadPreviewPhoto() {
+  const hero = state.deck?.slides?.find((slide) => slide.image)?.image;
+  if (hero) {
+    state.previewPhoto = hero;
+    return;
+  }
+  state.previewPhoto = "";
+  try {
+    const { gather, searchQuery } = await import("./lib/research.js");
+    const materials = await gather(searchQuery(topicText()));
+    const photo = materials.images?.[0]?.url || "";
+    if (photo && state.picking) {
+      state.previewPhoto = photo;
+      paintPicker();
+    }
+  } catch {
+    /* превью останутся с заглушкой вместо фото */
+  }
+}
+
+function openPicker() {
+  if (!state.deck || state.busy) return;
+  state.picking = true;
+  renderAll();
+  loadPreviewPhoto();
+}
+
+function pickTemplate(id) {
+  const template = templateById(id);
+  if (state.deck) {
+    // Готовую колоду перекрашиваем сразу, без нового запроса к модели.
+    const topic = topicText();
+    state.deck = {
+      ...state.deck,
+      template: template.id,
+      topic,
+      customColors: false,
+      theme: normalizeTheme(templateTheme(template.id, topic)),
+    };
+    state.picking = false;
+    state.messages.push({ role: "local", content: `Шаблон «${template.name}» применён ко всем слайдам.` });
+    forceScroll = true;
+    renderAll();
+    return;
+  }
+  state.template = template.id;
+  state.messages.push({ role: "local", content: `Шаблон «${template.name}». Собираю слайды…` });
+  compose();
+}
+
+function sampleDeck(template, topic) {
+  const title = previewTitle(topic);
+  const photo = state.previewPhoto || "placeholder";
+  return {
+    title,
+    template: template.id,
+    theme: normalizeTheme(templateTheme(template.id, topic)),
+    slides: [
+      {
+        layout: "hero",
+        kicker: "Презентация",
+        title,
+        subtitle: "Главные факты, даты и выводы по теме",
+        image: photo,
+        imageAlt: "",
+      },
+      {
+        layout: "split",
+        kicker: "Факты",
+        title: "Главное о теме",
+        bullets: ["Когда и где это началось", "Ключевые люди и числа", "Почему это важно сегодня"],
+        image: photo,
+        imageAlt: "Фото по теме",
+      },
+      {
+        layout: "metrics",
+        kicker: "В цифрах",
+        title: "Масштаб",
+        metrics: [
+          { value: "97", label: "метров" },
+          { value: "2002", label: "год" },
+          { value: "3", label: "факта" },
+        ],
+      },
+    ],
+  };
+}
+
+function paintPicker() {
+  const topic = topicText();
+  const order = recommendTemplates(topic);
+  const current = state.deck?.template;
+  els.pickerNote.textContent = topic
+    ? `Цвета подобраны под тему «${previewTitle(topic)}». Первые два подходят ей лучше всего.`
+    : "Цвета подобраны под тему.";
+  els.pickerCancel.hidden = !state.deck;
+  els.pickerGrid.replaceChildren();
+  order.forEach((id, rank) => {
+    const template = TEMPLATES.find((item) => item.id === id);
+    const deck = sampleDeck(template, topic);
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `tpl-card${current === id ? " is-current" : ""}`;
+    card.setAttribute("aria-label", `Шаблон ${template.name}: ${template.description}`);
+    const [hero, split, metrics] = deck.slides.map((slide, index) => slideHtml(slide, index, 3, deck, false));
+    card.innerHTML = `
+      <div class="tpl-shots">
+        <div class="tpl-shot is-main">${hero}</div>
+        <div class="tpl-shot">${split}</div>
+        <div class="tpl-shot">${metrics}</div>
+      </div>
+      <div class="tpl-meta">
+        <strong>${esc(template.name)}${rank < 2 ? ' <em>под тему</em>' : ""}${current === id ? ' <em>сейчас</em>' : ""}</strong>
+        <span>${esc(template.description)}</span>
+      </div>`;
+    card.addEventListener("click", () => pickTemplate(id));
+    els.pickerGrid.appendChild(card);
+  });
+  requestAnimationFrame(fitShots);
+}
+
+function fitShots() {
+  for (const shot of els.pickerGrid.querySelectorAll(".tpl-shot")) {
+    shot.style.setProperty("--shot", String(shot.clientWidth / 1280 || 0.2));
   }
 }
 
@@ -410,7 +616,7 @@ function step(direction) {
 }
 
 function resetDeck() {
-  const untouched = !state.deck && state.messages.length <= 1;
+  const untouched = !state.deck && !state.picking && state.messages.length <= 1;
   if (untouched) return;
   if (!resetArmed) {
     resetArmed = true;
@@ -427,6 +633,9 @@ function resetDeck() {
   state.messages = [WELCOME];
   state.deck = null;
   state.index = 0;
+  state.template = null;
+  state.picking = false;
+  state.previewPhoto = "";
   forceScroll = true;
   exitPresent();
   renderAll();
@@ -598,9 +807,13 @@ function slideHtml(slide, index, total, deck, linked = true) {
   const foot = `<footer class="slide-foot"><span>${esc(deck.title || "")}</span><span>${number} / ${totalNumber}</span></footer>`;
   const mark = `<div class="mark" aria-hidden="true"><i></i><i></i><i></i></div>`;
   const style = `--bg:${bg};--ink:${ink};--muted:${muted};--accent:${accent};--soft:${soft}`;
-  const photo = slide.image
-    ? `<img class="slide-photo" src="${esc(slide.image)}" alt="${esc(slide.imageAlt || "")}" />`
-    : "";
+  const photo =
+    slide.image === "placeholder"
+      ? `<div class="slide-photo is-placeholder" aria-hidden="true"></div>`
+      : slide.image
+        ? `<img class="slide-photo" src="${esc(slide.image)}" alt="${esc(slide.imageAlt || "")}" />`
+        : "";
+  const tpl = ` tpl-${/^[a-z]+$/.test(deck.template || "") ? deck.template : "editorial"}`;
   const photoClass = slide.image ? " has-photo" : "";
   let inner = "";
 
@@ -635,7 +848,7 @@ function slideHtml(slide, index, total, deck, linked = true) {
     inner = `${kicker}${titleHtml}${lede}${pointsHtml(bullets)}${foot}`;
   }
 
-  return `<article class="slide layout-${layout} ${font}${photoClass}" style="${style}" aria-label="${esc(`Слайд ${index + 1}. ${title}`)}">${inner}</article>`;
+  return `<article class="slide layout-${layout} ${font}${photoClass}${tpl}" style="${style}" aria-label="${esc(`Слайд ${index + 1}. ${title}`)}">${inner}</article>`;
 }
 
 function linksHtml(links, linked) {
@@ -667,7 +880,7 @@ function standaloneHtml(deck, css) {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>${esc(deck.title)}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;0,9..144,680;1,9..144,560&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="${FONTS_URL}" rel="stylesheet" />
   <style>
     ${css}
     html, body { height: 100%; margin: 0; background: #141210; }
