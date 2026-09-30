@@ -91,7 +91,9 @@ export async function composePresentation(body, credsOverride) {
 
   // Слабые модели иногда возвращают «скелет» — слайды с одними заголовками.
   // Один раз просим дописать содержимое, если на это хватает времени функции.
-  if (deckLooksEmpty(deck) && Date.now() - startedAt < 35000) {
+  // Если факты из Википедии есть, пустые слайды дополнятся ими без второго запроса к модели —
+  // так бесплатный лимит запросов тратится вдвое медленнее.
+  if (deckLooksEmpty(deck) && !materials.facts.length && Date.now() - startedAt < 30000) {
     const empty = emptySlides(deck).map((slide) => `«${slide.title}»`).join(", ");
     try {
       const again = await askJson(creds, [

@@ -32,7 +32,10 @@ export function resolveCreds(env = {}) {
   const customKey = (env.apiKey || "").trim();
   const customModel = (env.model || "").trim();
   if (!customBase && !customKey) {
-    return { baseUrl: BUILTIN_BASE, model: customModel || BUILTIN_MODEL, apiKey: "", builtin: true };
+    // Без токена llm7.io даёт ~10 запросов в минуту на IP, а у Vercel IP общие —
+    // лимит быстро кончается. Бесплатный токен (LLM7_TOKEN) поднимает лимит.
+    const token = (env.llm7Token || "").trim();
+    return { baseUrl: BUILTIN_BASE, model: customModel || BUILTIN_MODEL, apiKey: token, builtin: true };
   }
   const baseUrl = safeBase(customBase || "https://api.openai.com/v1");
   const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(baseUrl);
@@ -51,6 +54,7 @@ export function serverCredsFromEnv() {
     baseUrl: process.env.OPENAI_BASE_URL || "",
     apiKey: process.env.OPENAI_API_KEY || "",
     model: process.env.OPENAI_MODEL || "",
+    llm7Token: process.env.LLM7_TOKEN || "",
   });
 }
 
@@ -87,10 +91,16 @@ async function callOnce(creds, messages, extra) {
       /* keep the short message */
     }
     if (response.status === 401 || response.status === 403) message = "Ключ API отклонён.";
-    if (response.status === 429) message = "Модель занята. Подождите немного и отправьте ещё раз.";
+    if (response.status === 429) {
+      message = creds.builtin && !creds.apiKey
+        ? "Бесплатный лимит модели исчерпан (общий для всех без токена). Подождите минуту и отправьте ещё раз."
+        : "Лимит запросов к модели исчерпан. Подождите минуту и отправьте ещё раз.";
+    }
     if (response.status >= 500) message = "Модель сейчас недоступна. Попробуйте ещё раз через минуту.";
     const error = new Error(message);
     error.status = response.status >= 500 ? 502 : response.status;
+    const retryAfter = Number(response.headers.get("retry-after"));
+    if (Number.isFinite(retryAfter) && retryAfter > 0) error.retryAfter = retryAfter;
     throw error;
   }
 
@@ -105,7 +115,7 @@ async function callOnce(creds, messages, extra) {
 }
 
 async function complete(creds, messages) {
-  const hosted = /api\.openai\.com|openrouter\.ai/.test(creds.baseUrl);
+  const hosted = /api\.openai\.com|openrouter\.ai|api\.llm7\.io/.test(creds.baseUrl);
   const attempts = creds.builtin
     ? [{ response_format: { type: "json_object" }, max_tokens: 4096 }, { max_tokens: 4096 }]
     : hosted
@@ -127,8 +137,9 @@ export async function completeRespectingLimit(creds, messages) {
   try {
     return await complete(creds, messages);
   } catch (error) {
-    if (error.status !== 429 || !creds.builtin) throw error;
-    await delay(16000);
+    if (error.status !== 429) throw error;
+    // Одна повторная попытка. Ждём не дольше 12 секунд, чтобы уложиться в лимит функции Vercel.
+    await delay(Math.min(12, error.retryAfter || 8) * 1000);
     return await complete(creds, messages);
   }
 }

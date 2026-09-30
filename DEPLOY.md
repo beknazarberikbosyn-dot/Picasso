@@ -15,8 +15,8 @@
 
 1. [vercel.com](https://vercel.com) → **Add New Project** → импорт репозитория Picasso.
 2. В **Settings → Build and Deployment** выключите Override у **Build Command** и **Output Directory**. Сборка сама кладёт страницу и API в результат деплоя.
-3. **Environment Variables**: при необходимости `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`.
-4. После деплоя откройте URL проекта (например `https://picasso-fawn.vercel.app`). Проверка: `/api/health` отвечает `{"ok":true,"ready":true}`.
+3. **Environment Variables**: добавьте `LLM7_TOKEN` — бесплатный токен с [dash.llm7.io](https://dash.llm7.io). Без него встроенная модель быстро упирается в общий лимит и отвечает «лимит исчерпан». Вместо этого можно задать свою модель: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`.
+4. После деплоя откройте URL проекта (например `https://picasso-fawn.vercel.app`). Проверка: `/api/health` отвечает `{"ok":true,"ready":true,...}`; поле `"token":true` значит, что токен подхватился. После изменения переменных нужен **Redeploy**.
 
 **Вариант A — всё на Vercel:** открывайте сайт по URL Vercel; `config.json` можно оставить пустым — API на том же домене.
 

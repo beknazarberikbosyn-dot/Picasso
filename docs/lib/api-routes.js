@@ -2,7 +2,14 @@ import { composePresentation } from "./compose.js";
 import { serverCredsFromEnv } from "./llm.js";
 
 export function getHealth() {
-  return { ok: true, ready: true };
+  const creds = serverCredsFromEnv();
+  return {
+    ok: true,
+    ready: true,
+    model: creds.model,
+    provider: creds.builtin ? "llm7" : "custom",
+    token: Boolean(creds.apiKey),
+  };
 }
 
 export async function postCompose(body) {
