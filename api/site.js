@@ -51,7 +51,8 @@ export default function handler(request, response) {
   if (!file) return response.status(404).json({ error: "Нет файла", path: name || "/" });
   const body = readFileSync(file);
   response.setHeader("Content-Type", types[path.extname(file)] || "application/octet-stream");
-  response.setHeader("Cache-Control", "public, max-age=60");
+  // no-cache: браузер каждый раз сверяется с сервером, и обновления видны сразу.
+  response.setHeader("Cache-Control", "no-cache");
   if (request.method === "HEAD") return response.status(200).end();
   return response.status(200).send(body);
 }

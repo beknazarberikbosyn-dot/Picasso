@@ -179,7 +179,7 @@ function bind() {
   els.langEn.addEventListener("click", () => setLang("en-US"));
   els.newDeck.addEventListener("click", resetDeck);
   els.templateBtn.addEventListener("click", openPicker);
-  els.usage.addEventListener("click", (event) => {
+  els.usage?.addEventListener("click", (event) => {
     event.stopPropagation();
     const open = els.usagePop.hidden;
     els.usagePop.hidden = !open;
@@ -187,7 +187,7 @@ function bind() {
     if (open) paintUsage();
   });
   document.addEventListener("click", (event) => {
-    if (els.usagePop.hidden || event.target.closest(".usage-wrap")) return;
+    if (!els.usagePop || els.usagePop.hidden || event.target.closest(".usage-wrap")) return;
     els.usagePop.hidden = true;
     els.usage.setAttribute("aria-expanded", "false");
   });
@@ -570,10 +570,7 @@ function paintUsage() {
   const perDeck = decks.length ? used / decks.length : 0;
   const limitHit = usageState.limitHitAt && now - usageState.limitHitAt < 2 * 60 * 1000;
 
-  if (!limits && !log.length) {
-    els.usage.hidden = true;
-    return;
-  }
+  if (!els.usage) return;
   els.usage.hidden = false;
 
   const total = limits?.tokensPerDay || 0;
@@ -585,12 +582,17 @@ function paintUsage() {
     ? "Лимит исчерпан"
     : total
       ? `${exact ? "" : "≈ "}${formatTokens(left)} токенов`
-      : `${formatTokens(used)} токенов за сутки`;
+      : log.length
+        ? `${formatTokens(used)} токенов за сутки`
+        : "Токены: нет данных";
   els.usage.title = "Сколько токенов модели осталось на сегодня";
 
   if (els.usagePop.hidden) return;
   const planName = limits?.plan === "free-token" ? "бесплатный токен LLM7" : limits?.plan === "anonymous" ? "LLM7 без токена" : "своя модель";
   const rows = [];
+  if (!limits) {
+    rows.push(`<p>Не удалось узнать тариф модели у сервера. Остаток появится после первой собранной презентации.</p>`);
+  }
   if (total) {
     rows.push(`<p class="usage-big">${exact ? "" : "≈ "}${esc(formatTokens(left))} <span>из ${esc(formatTokens(total))} токенов на сутки</span></p>`);
     if (perDeck && !exact) {
