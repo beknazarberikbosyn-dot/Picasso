@@ -1,5 +1,5 @@
 import { composePresentation } from "./compose.js";
-import { serverCredsFromEnv } from "./llm.js";
+import { planLimits, serverCredsFromEnv } from "./llm.js";
 
 export function getHealth() {
   const creds = serverCredsFromEnv();
@@ -9,6 +9,7 @@ export function getHealth() {
     model: creds.model,
     provider: creds.builtin ? "llm7" : "custom",
     token: Boolean(creds.apiKey),
+    limits: planLimits(creds),
   };
 }
 

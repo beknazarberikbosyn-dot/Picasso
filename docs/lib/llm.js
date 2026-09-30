@@ -105,6 +105,7 @@ async function callOnce(creds, messages, extra) {
   }
 
   const data = await response.json();
+  recordUsage(creds, data, response.headers);
   const text = data.choices?.[0]?.message?.content;
   if (!text || typeof text !== "string") {
     const error = new Error("Модель вернула пустой ответ.");
@@ -112,6 +113,36 @@ async function callOnce(creds, messages, extra) {
     throw error;
   }
   return text;
+}
+
+// Лимиты llm7.io за сутки и за час (docs.llm7.io/limits). API остатка у llm7 нет,
+// поэтому сайт сам считает потраченные токены по полю usage в ответах модели.
+export function planLimits(creds) {
+  if (!creds?.builtin) return null;
+  return creds.apiKey
+    ? { plan: "free-token", tokensPerDay: 1000000, requestsPerHour: 100 }
+    : { plan: "anonymous", tokensPerDay: 500000, requestsPerHour: 60 };
+}
+
+function recordUsage(creds, data, headers) {
+  const meter = creds.meter;
+  if (!meter) return;
+  meter.calls += 1;
+  const usage = data?.usage || {};
+  const total = Number(usage.total_tokens) || (Number(usage.prompt_tokens) || 0) + (Number(usage.completion_tokens) || 0);
+  if (Number.isFinite(total)) meter.tokens += total;
+  // Если провайдер присылает остаток в заголовках (как OpenAI), берём точные числа.
+  const read = (...names) => {
+    for (const name of names) {
+      const value = Number(headers?.get?.(name));
+      if (headers?.get?.(name) != null && Number.isFinite(value)) return value;
+    }
+    return null;
+  };
+  const remainingTokens = read("x-ratelimit-remaining-tokens", "x-ratelimit-remaining-tokens-day", "ratelimit-remaining-tokens");
+  const remainingRequests = read("x-ratelimit-remaining-requests", "x-ratelimit-remaining", "ratelimit-remaining");
+  if (remainingTokens != null) meter.remainingTokens = remainingTokens;
+  if (remainingRequests != null) meter.remainingRequests = remainingRequests;
 }
 
 async function complete(creds, messages) {

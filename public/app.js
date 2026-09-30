@@ -98,6 +98,10 @@ const els = {
   swatches: document.getElementById("swatches"),
   newDeck: document.getElementById("newDeck"),
   templateBtn: document.getElementById("templateBtn"),
+  usage: document.getElementById("usage"),
+  usageFill: document.getElementById("usageFill"),
+  usageText: document.getElementById("usageText"),
+  usagePop: document.getElementById("usagePop"),
   picker: document.getElementById("picker"),
   pickerGrid: document.getElementById("pickerGrid"),
   pickerNote: document.getElementById("pickerNote"),
@@ -139,6 +143,8 @@ renderAll();
 forgetSavedKey();
 new ResizeObserver(() => fit()).observe(els.viewport);
 new ResizeObserver(() => fitShots()).observe(els.pickerGrid);
+loadLimits();
+setInterval(paintUsage, 60000);
 
 function bind() {
   for (const example of EXAMPLES) {
@@ -173,6 +179,18 @@ function bind() {
   els.langEn.addEventListener("click", () => setLang("en-US"));
   els.newDeck.addEventListener("click", resetDeck);
   els.templateBtn.addEventListener("click", openPicker);
+  els.usage.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = els.usagePop.hidden;
+    els.usagePop.hidden = !open;
+    els.usage.setAttribute("aria-expanded", String(open));
+    if (open) paintUsage();
+  });
+  document.addEventListener("click", (event) => {
+    if (els.usagePop.hidden || event.target.closest(".usage-wrap")) return;
+    els.usagePop.hidden = true;
+    els.usage.setAttribute("aria-expanded", "false");
+  });
   els.pickerAuto.addEventListener("click", () => pickTemplate(recommendTemplates(topicText())[0]));
   els.pickerCancel.addEventListener("click", () => {
     state.picking = false;
@@ -441,6 +459,7 @@ async function compose(retryText = "") {
       deck: state.deck,
       template: state.deck?.template || state.template || undefined,
     });
+    if (data.usage) recordUsage(data.usage);
     if (!data.deck?.slides?.length) throw new Error("В ответе не было слайдов.");
     state.messages.push({ role: "assistant", content: data.reply || "Презентация готова." });
     state.deck = data.deck;
@@ -457,11 +476,139 @@ async function compose(retryText = "") {
       state.template = null;
       state.picking = true;
     }
+    if (/лимит|занята/i.test(error.message || "")) {
+      usageState.limitHitAt = Date.now();
+      paintUsage();
+    }
     toast(error.message || "Не получилось собрать презентацию.");
   } finally {
     state.busy = false;
     renderAll();
   }
+}
+
+// ---------- Остаток токенов LLM7 ----------
+// У llm7.io нет API остатка, поэтому считаем сами: сервер возвращает usage каждого
+// запроса, а браузер хранит журнал за сутки. Лимит токена общий для всех посетителей,
+// так что здесь видно расход из этого браузера; точный остаток — в кабинете dash.llm7.io.
+const DAY = 24 * 60 * 60 * 1000;
+const HOUR = 60 * 60 * 1000;
+const usageState = { limits: null, limitHitAt: 0 };
+
+function usageLog() {
+  try {
+    const list = JSON.parse(localStorage.getItem("picasso-usage") || "[]");
+    const now = Date.now();
+    return Array.isArray(list) ? list.filter((item) => item && now - item.t < DAY) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUsageLog(list) {
+  try {
+    localStorage.setItem("picasso-usage", JSON.stringify(list.slice(-300)));
+  } catch {
+    /* private mode */
+  }
+}
+
+function recordUsage(usage) {
+  if (usage.tokensPerDay) {
+    usageState.limits = { plan: usage.plan, tokensPerDay: usage.tokensPerDay, requestsPerHour: usage.requestsPerHour };
+  }
+  const entry = { t: Date.now(), tokens: Number(usage.tokens) || 0, calls: Number(usage.calls) || 0 };
+  if (Number.isFinite(usage.remainingTokens)) entry.remainingTokens = usage.remainingTokens;
+  if (Number.isFinite(usage.remainingRequests)) entry.remainingRequests = usage.remainingRequests;
+  saveUsageLog([...usageLog(), entry]);
+  usageState.limitHitAt = 0;
+  paintUsage();
+}
+
+async function loadLimits() {
+  try {
+    const remoteBase = await loadRemoteApiBase();
+    if (!remoteBase && location.hostname.endsWith("github.io")) {
+      // На GitHub Pages без API модель вызывается из браузера без токена.
+      usageState.limits = { plan: "anonymous", tokensPerDay: 500000, requestsPerHour: 60 };
+    } else {
+      const url = remoteBase ? `${remoteBase}/api/health` : appPath("/api/health");
+      const response = await fetch(url, { cache: "no-store" });
+      const health = await response.json();
+      if (health?.limits) usageState.limits = health.limits;
+    }
+  } catch {
+    /* без сведений о лимите индикатор покажет только расход */
+  }
+  paintUsage();
+}
+
+function formatTokens(value) {
+  const number = Math.max(0, Math.round(value));
+  if (number >= 1000000) return `${(number / 1000000).toFixed(number % 1000000 ? 2 : 0).replace(".", ",")} млн`;
+  if (number >= 1000) return `${Math.round(number / 1000)} тыс.`;
+  return String(number);
+}
+
+function plural(value, one, few, many) {
+  const n = Math.abs(value) % 100;
+  const last = n % 10;
+  if (n > 10 && n < 20) return many;
+  if (last === 1) return one;
+  if (last >= 2 && last <= 4) return few;
+  return many;
+}
+
+function paintUsage() {
+  const limits = usageState.limits;
+  const log = usageLog();
+  const now = Date.now();
+  const used = log.reduce((sum, item) => sum + item.tokens, 0);
+  const callsHour = log.filter((item) => now - item.t < HOUR).reduce((sum, item) => sum + (item.calls || 1), 0);
+  const exact = [...log].reverse().find((item) => Number.isFinite(item.remainingTokens) && now - item.t < 10 * 60 * 1000);
+  const decks = log.filter((item) => item.tokens > 0);
+  const perDeck = decks.length ? used / decks.length : 0;
+  const limitHit = usageState.limitHitAt && now - usageState.limitHitAt < 2 * 60 * 1000;
+
+  if (!limits && !log.length) {
+    els.usage.hidden = true;
+    return;
+  }
+  els.usage.hidden = false;
+
+  const total = limits?.tokensPerDay || 0;
+  const left = exact ? exact.remainingTokens : total ? Math.max(0, total - used) : 0;
+  const share = total ? Math.max(0, Math.min(1, left / total)) : 1;
+  els.usageFill.style.width = `${Math.round(share * 100)}%`;
+  els.usage.classList.toggle("is-low", limitHit || (total && share < 0.15));
+  els.usageText.textContent = limitHit
+    ? "Лимит исчерпан"
+    : total
+      ? `${exact ? "" : "≈ "}${formatTokens(left)} токенов`
+      : `${formatTokens(used)} токенов за сутки`;
+  els.usage.title = "Сколько токенов модели осталось на сегодня";
+
+  if (els.usagePop.hidden) return;
+  const planName = limits?.plan === "free-token" ? "бесплатный токен LLM7" : limits?.plan === "anonymous" ? "LLM7 без токена" : "своя модель";
+  const rows = [];
+  if (total) {
+    rows.push(`<p class="usage-big">${exact ? "" : "≈ "}${esc(formatTokens(left))} <span>из ${esc(formatTokens(total))} токенов на сутки</span></p>`);
+    if (perDeck && !exact) {
+      const count = Math.floor(left / perDeck);
+      rows.push(`<p>Хватит примерно на <b>${count}</b> ${plural(count, "презентацию", "презентации", "презентаций")} или правок (в среднем ${esc(formatTokens(perDeck))} токенов на одну).</p>`);
+    }
+    rows.push(`<p>Запросов к модели за час: <b>${callsHour}</b> из ${limits.requestsPerHour}.</p>`);
+  }
+  rows.push(`<p>Потрачено за 24 часа в этом браузере: <b>${esc(formatTokens(used))}</b> ${plural(Math.round(used), "токен", "токена", "токенов")}.</p>`);
+  if (limitHit) rows.push(`<p class="usage-warn">Модель только что ответила, что лимит исчерпан. Подождите минуту и попробуйте снова.</p>`);
+  rows.push(
+    `<p class="usage-note">Тариф: ${esc(planName)}. ${
+      exact
+        ? "Остаток пришёл от LLM7 вместе с последним ответом."
+        : "LLM7 не сообщает остаток, поэтому это оценка: лимит общий для всех посетителей сайта, а посчитаны только запросы из этого браузера. Точный остаток — в кабинете <a href=\"https://dash.llm7.io\" target=\"_blank\" rel=\"noopener noreferrer\">dash.llm7.io</a>."
+    }</p>`,
+  );
+  els.usagePop.innerHTML = rows.join("");
 }
 
 function topicText() {

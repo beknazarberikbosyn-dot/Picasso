@@ -1,6 +1,6 @@
 import { deckLooksEmpty, emptySlides, finishDeck, normalizeDeck, parseModelJson } from "./deck.js";
 import { gather, intentBrief, materialsBrief, readFlags, searchQuery } from "./research.js";
-import { completeRespectingLimit, resolveCreds, serverCredsFromEnv } from "./llm.js";
+import { completeRespectingLimit, planLimits, resolveCreds, serverCredsFromEnv } from "./llm.js";
 import { SYSTEM_PROMPT } from "./prompt.js";
 import { isTemplate, templateById } from "./templates.js";
 
@@ -47,7 +47,7 @@ export async function composePresentation(body, credsOverride) {
     }
   }
 
-  const creds =
+  let creds =
     credsOverride ||
     (typeof process !== "undefined" && process.env ? serverCredsFromEnv() : resolveCreds());
   if (!creds.apiKey && !creds.builtin) {
@@ -55,6 +55,10 @@ export async function composePresentation(body, credsOverride) {
     error.status = 500;
     throw error;
   }
+
+  // Счётчик токенов этого запроса — сайт показывает по нему остаток лимита.
+  const meter = { calls: 0, tokens: 0 };
+  creds = { ...creds, meter };
 
   const userTexts = history.filter((message) => message.role === "user").map((message) => message.content);
   const lastUser = userTexts.at(-1) || "";
@@ -138,5 +142,10 @@ export async function composePresentation(body, credsOverride) {
   if ((flags.sources || flags.images) && !materials.facts.length && !materials.images.length) {
     reply = `${reply} Открытые страницы по этой теме не нашлись, поэтому ссылки и картинки не из чего было взять.`.slice(0, 600);
   }
-  return { reply, deck };
+  const limits = planLimits(creds);
+  const usage = { tokens: meter.tokens, calls: meter.calls };
+  if (limits) Object.assign(usage, limits);
+  if (meter.remainingTokens != null) usage.remainingTokens = meter.remainingTokens;
+  if (meter.remainingRequests != null) usage.remainingRequests = meter.remainingRequests;
+  return { reply, deck, usage };
 }
