@@ -4,12 +4,25 @@ export async function gather(rawQuery) {
   const query = String(rawQuery || "").replace(/\s+/g, " ").trim().slice(0, 140);
   if (query.length < 2) return { facts: [], images: [], links: [] };
 
-  let result = await gatherOnce(query);
-  if (!result.facts.length && !result.images.length) {
-    const short = query.split(/\s+/).slice(0, 2).join(" ");
-    if (short.length >= 2 && short !== query) result = await gatherOnce(short);
+  // Поиск по Википедии ищет все слова сразу, поэтому длинный запрос часто пуст.
+  // Сужаем запрос шаг за шагом, пока не найдутся факты и картинки.
+  const words = query.split(/\s+/);
+  const attempts = [query];
+  for (const size of [3, 2, 1]) {
+    const short = words.slice(0, size).join(" ");
+    if (short.length >= 2 && !attempts.includes(short)) attempts.push(short);
   }
-  return result;
+
+  // На Vercel у функции ограничено время, поэтому поиск не тянется дольше ~20 секунд.
+  const deadline = Date.now() + 20000;
+  let best = { facts: [], images: [], links: [] };
+  for (const attempt of attempts) {
+    if (Date.now() > deadline) break;
+    const result = await gatherOnce(attempt);
+    if (result.facts.length + result.images.length > best.facts.length + best.images.length) best = result;
+    if (best.facts.length >= 2 && best.images.length) break;
+  }
+  return best;
 }
 
 async function gatherOnce(query) {
@@ -21,7 +34,7 @@ async function gatherOnce(query) {
 
   const found = uniqueBy([...ru, ...en], (page) => page.url);
   const matchedPages = found.filter((page) => matchesQuery(`${page.title} ${page.fact}`, query));
-  const pages = (matchedPages.length ? matchedPages : found).slice(0, 4);
+  const pages = (matchedPages.length ? matchedPages : found).slice(0, 5);
   const foundImages = uniqueBy(
     [...pages.flatMap((page) => (page.image ? [page.image] : [])), ...photos],
     (image) => image.key,
@@ -29,7 +42,8 @@ async function gatherOnce(query) {
   const matchedImages = foundImages.filter(
     (image) => matchesQuery(`${image.title} ${image.page}`, query) || pages.some((page) => page.image?.key === image.key),
   );
-  const images = (matchedImages.length ? matchedImages : foundImages).slice(0, 4);
+  // Сначала картинки, где совпало название, затем остальные результаты поиска Commons.
+  const images = uniqueBy([...matchedImages, ...foundImages], (image) => image.key).slice(0, 4);
   const links = pages.map((page) => ({ title: page.title, url: page.url, note: "статья" }));
   for (const image of images) {
     if (!image.page || links.some((link) => link.url === image.page)) continue;
@@ -41,36 +55,74 @@ async function gatherOnce(query) {
     facts: pages
       .map((page) => ({ text: page.fact, title: page.title, url: page.url }))
       .filter((fact) => fact.text.length >= 40)
-      .slice(0, 4),
+      .slice(0, 5),
     images,
     links: links.slice(0, 6),
   };
 }
 
 const SKIP_WORD =
-  /^(?:слайд\p{L}*|презентац\p{L}*|обложк\p{L}*|финал\p{L}*|фон\p{L}*|палитр\p{L}*|т[её]мн\p{L}*|светл\p{L}*|чёрн\p{L}*|черн\p{L}*|тёпл\p{L}*|тепл\p{L}*|картин\p{L}*|изображен\p{L}*|иллюстрац\p{L}*|фото|источник\p{L}*|ссылк\p{L}*|интернет\p{L}*|потусторон\p{L}*|посторон\p{L}*|вставь\p{L}*|использу\p{L}*|макет\p{L}*|колод\p{L}*|урок\p{L}*|класс\p{L}*|конец|конце|нужн\p{L}*|хочу|сделай\p{L}*|добав\p{L}*|покаж\p{L}*|пересобер\p{L}*|конкретн\p{L}*|факт\p{L}*|угроз\p{L}*|пут\p{L}*|спасен\p{L}*|вымиран\p{L}*|причин\p{L}*|возможн\p{L}*|решен\p{L}*|исследован\p{L}*|для|это|как|или|при|про|что|чтобы|если|тоже|ещё|еще|уже|только|очень|между|после|перед|один\p{L}*|два|три|пять|шесть|the|and|with|from|about)$/iu;
+  /^(?:слайд\p{L}*|презентац\p{L}*|обложк\p{L}*|финал\p{L}*|фон\p{L}*|палитр\p{L}*|т[её]мн\p{L}*|светл\p{L}*|чёрн\p{L}*|черн\p{L}*|тёпл\p{L}*|тепл\p{L}*|картин\p{L}*|изображен\p{L}*|иллюстрац\p{L}*|фото\p{L}*|снимк\p{L}*|снимок|источник\p{L}*|ссылк\p{L}*|интернет\p{L}*|потусторон\p{L}*|посторон\p{L}*|сторонн\p{L}*|информац\p{L}*|связан\p{L}*|тем\p{L}?|темой|добавь|вставь|найди|возьми|реальн\p{L}*|библиограф\p{L}*|вставь\p{L}*|использу\p{L}*|макет\p{L}*|колод\p{L}*|урок\p{L}*|класс\p{L}*|конец|конце|нужн\p{L}*|хочу|сделай\p{L}*|добав\p{L}*|покаж\p{L}*|пересобер\p{L}*|для|это|как|или|при|про|что|чтобы|если|тоже|ещё|еще|уже|только|очень|между|после|перед|один\p{L}*|два|три|пять|шесть|восьм\p{L}*|девят\p{L}*|десят\p{L}*|the|and|with|from|about)$/iu;
 
-export function searchQuery(text) {
-  const words = String(text || "")
+// \b в JS не видит границы кириллических слов, поэтому границу задаём явно.
+const TOPIC_PATTERNS = [
+  /(?<![\p{L}\p{N}])(?:на\s+тему|тема|про|об|о)[:\s]+(.+?)(?:\s*[,.!;]|$)/iu,
+  /\babout\s+(.+?)(?:\s*[,.!;]|$)/i,
+  /\b(?:on|regarding)\s+(.+?)(?:\s*[,.!;]|$)/i,
+];
+
+function topicWords(text) {
+  return String(text || "")
     .replace(/[^\p{L}\p{N}\s-]+/gu, " ")
     .split(/\s+/)
     .map((word) => word.trim())
     .filter((word) => word.length >= 3 && !/^\d+$/.test(word) && !SKIP_WORD.test(word));
+}
+
+export function searchQuery(text) {
+  const raw = String(text || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+
+  for (const pattern of TOPIC_PATTERNS) {
+    const match = raw.match(pattern);
+    if (!match?.[1]) continue;
+    const query = topicWords(match[1]).slice(0, 6).join(" ");
+    if (query.length >= 2) return query.slice(0, 120);
+  }
+
+  const words = topicWords(raw);
   const query = words.slice(0, 6).join(" ");
-  return (query || String(text || "")).slice(0, 120);
+  return (query || raw).slice(0, 120);
 }
 
 export function readFlags(text) {
   const value = String(text || "");
   return {
-    images: /картин|изображен|иллюстрац|фото|picture|image|photo/i.test(value),
-    sources: /источник|ссылк|посторон|потусторон|source|\blinks?\b/i.test(value),
+    images: /картин|изображен|иллюстрац|фото\p{L}*|снимк\p{L}*|снимок|снимк|снимок|визуал|picture|image|photo|pic(?![\p{L}])/iu.test(value),
+    sources:
+      /источник|ссылк|библиограф|литератур|сторонн|посторон|потусторон|интернет|сети|википед|открыт\p{L}*\s+страниц|материал\p{L}*\s+из|реальн\p{L}*\s+(?:факт|данн)|source|links?(?![\p{L}])|cite|reference/iu.test(
+        value,
+      ),
     dark: /(?:^|[^a-zа-яё])(?:т[её]мн\p{L}*|ч[её]рн\p{L}*|dark|black)(?=$|[^a-zа-яё])/iu.test(value),
   };
 }
 
+export function intentBrief(text) {
+  const value = String(text || "").replace(/\s+/g, " ").trim();
+  if (!value) return "";
+  const lines = ["", "ПОСЛЕДНЯЯ ПРОСЬБА (выполни буквально, не игнорируй детали):", value];
+  const slideMatch = value.match(/(\d{1,2})\s*слайд/i);
+  if (slideMatch) lines.push(`Явно указано число слайдов: ${slideMatch[1]}.`);
+  const classMatch = value.match(/(\d{1,2})\s*класс/i);
+  if (classMatch) lines.push(`Аудитория: ${classMatch[1]} класс.`);
+  return lines.join("\n");
+}
+
 export function materialsBrief(materials, flags) {
-  if (!materials?.facts?.length && !materials?.images?.length) return "";
+  const hasFacts = Boolean(materials?.facts?.length);
+  const hasImages = Boolean(materials?.images?.length);
+  const hasLinks = Boolean(materials?.links?.length);
+  if (!hasFacts && !hasImages && !hasLinks) return "";
   const facts = materials.facts
     .map((fact, index) => `${index + 1}. ${fact.text} (${fact.title}: ${fact.url})`)
     .join("\n");
@@ -107,13 +159,13 @@ async function wikiPages(origin, query) {
     format: "json",
     generator: "search",
     gsrsearch: query,
-    gsrlimit: "4",
+    gsrlimit: "5",
     gsrnamespace: "0",
     prop: "extracts|info|pageimages",
     inprop: "url",
     exintro: "1",
     explaintext: "1",
-    exchars: "420",
+    exchars: "1200",
     pithumbsize: "1280",
     redirects: "1",
   }).toString();
@@ -180,10 +232,14 @@ async function commonsPhotos(query) {
     .filter(Boolean);
 }
 
+const IN_BROWSER = typeof window !== "undefined" && typeof document !== "undefined";
+
 async function getJson(url) {
+  // Из браузера (GitHub Pages) Википедия отвечает только с origin=* и без своих заголовков.
+  url.searchParams.set("origin", "*");
   const response = await fetch(url, {
-    headers: { "User-Agent": UA, Accept: "application/json" },
-    signal: AbortSignal.timeout(12000),
+    headers: IN_BROWSER ? {} : { "User-Agent": UA, Accept: "application/json" },
+    signal: AbortSignal.timeout(8000),
   });
   if (!response.ok) throw new Error(`Материалы ответили с кодом ${response.status}.`);
   return response.json();
@@ -193,8 +249,8 @@ function matchesQuery(text, query) {
   const needles = String(query || "")
     .toLowerCase()
     .split(/\s+/)
-    .filter((word) => word.length >= 5)
-    .map((word) => word.slice(0, 6));
+    .filter((word) => word.length >= 4)
+    .map((word) => word.slice(0, 8));
   if (!needles.length) return true;
   const hay = String(text || "").toLowerCase();
   return needles.some((needle) => hay.includes(needle));
@@ -205,11 +261,11 @@ function sentence(text) {
   const chunks = clean.split(/(?<=[.!?])\s+/);
   let built = "";
   for (const chunk of chunks) {
-    if (built.length >= 90) break;
+    if (built.length >= 360) break;
     built = built ? `${built} ${chunk}` : chunk;
   }
   if (built.length < 80) built = clean;
-  return built.slice(0, 280).trim();
+  return built.slice(0, 600).trim();
 }
 
 function urlKey(value) {

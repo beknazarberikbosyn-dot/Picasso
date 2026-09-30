@@ -584,6 +584,8 @@ function slideHtml(slide, index, total, deck, linked = true) {
   if (layout === "quote" && !quote) layout = "hero";
   if (layout === "split" && !(slide.aside || slide.body || slide.image)) layout = bullets.length ? "bullets" : "hero";
   if (layout === "sources" && !(slide.links || []).length) layout = "closing";
+  // У section виден только заголовок: если у слайда есть текст, показываем его списком.
+  if (layout === "section" && (bullets.length || slide.body)) layout = slide.image ? "split" : "bullets";
 
   const number = String(index + 1).padStart(2, "0");
   const totalNumber = String(total).padStart(2, "0");
@@ -591,7 +593,8 @@ function slideHtml(slide, index, total, deck, linked = true) {
   const long = title.length > (layout === "hero" || layout === "closing" ? 32 : 46);
   const titleHtml = `<h2 class="slide-title${long ? " is-long" : ""}">${esc(title)}</h2>`;
   const kicker = slide.kicker ? `<p class="kicker">${esc(slide.kicker)}</p>` : "";
-  const subtitle = slide.subtitle ? `<p class="subtitle">${esc(slide.subtitle)}</p>` : "";
+  const subtitleText = slide.subtitle || (["hero", "closing"].includes(layout) ? slide.body || "" : "");
+  const subtitle = subtitleText ? `<p class="subtitle">${esc(subtitleText)}</p>` : "";
   const foot = `<footer class="slide-foot"><span>${esc(deck.title || "")}</span><span>${number} / ${totalNumber}</span></footer>`;
   const mark = `<div class="mark" aria-hidden="true"><i></i><i></i><i></i></div>`;
   const style = `--bg:${bg};--ink:${ink};--muted:${muted};--accent:${accent};--soft:${soft}`;
@@ -606,7 +609,7 @@ function slideHtml(slide, index, total, deck, linked = true) {
   } else if (layout === "hero" || layout === "section") {
     inner = `${photo}${layout === "hero" ? mark : `<p class="ghost-num">${number}</p>`}<div class="hero-copy">${kicker}${titleHtml}${subtitle}</div>${foot}`;
   } else if (layout === "closing") {
-    inner = `<div class="hero-copy"><span class="bar"></span>${kicker}${titleHtml}${subtitle}</div>${foot}`;
+    inner = `<div class="hero-copy"><span class="bar"></span>${kicker}${titleHtml}${subtitle}${pointsHtml(bullets.slice(0, 3))}</div>${foot}`;
   } else if (layout === "quote") {
     const kick = slide.kicker || slide.title;
     const quoteClass = quote.length > 120 ? " is-long" : "";
@@ -620,7 +623,8 @@ function slideHtml(slide, index, total, deck, linked = true) {
       .join("");
     inner = `${kicker}${titleHtml}<div class="metric-row" style="--cols:${metrics.length}">${cells}</div>${foot}`;
   } else if (layout === "split" || (slide.image && layout === "bullets")) {
-    const copy = `${kicker}${titleHtml}${pointsHtml(bullets)}`;
+    const lede = !bullets.length && slide.body && slide.image ? `<p class="lede">${esc(slide.body)}</p>` : "";
+    const copy = `${kicker}${titleHtml}${lede}${pointsHtml(bullets)}`;
     const side = slide.image
       ? `<figure class="photo-frame">${photo}${slide.imageAlt ? `<figcaption>${esc(slide.imageAlt)}</figcaption>` : ""}</figure>`
       : `<aside class="aside">${esc(slide.aside || slide.body || "")}</aside>`;

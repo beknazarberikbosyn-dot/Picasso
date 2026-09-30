@@ -64,12 +64,62 @@ function normalizeTheme(raw) {
   };
 }
 
+// Модели часто кладут текст не в bullets/body, а в content, text, points и т. п.
+// Раньше такие поля отбрасывались, и на слайде оставался только заголовок.
+const BULLET_KEYS = ["bullets", "points", "items", "list", "bulletPoints", "bullet_points", "keyPoints", "key_points", "facts", "content"];
+const BODY_KEYS = ["body", "text", "description", "paragraph", "content", "details", "summary", "caption"];
+
+function itemText(item) {
+  if (typeof item === "string" || typeof item === "number") return String(item);
+  if (!item || typeof item !== "object") return "";
+  const head = asText(item.title || item.heading || item.label || item.name, 80);
+  const tail = asText(item.text || item.body || item.description || item.content || item.value || item.detail, 240);
+  if (head && tail) return `${head}: ${tail}`;
+  return head || tail;
+}
+
+function pickBullets(source) {
+  for (const key of BULLET_KEYS) {
+    const value = source[key];
+    if (Array.isArray(value) && value.length) {
+      const list = value.map((item) => asText(itemText(item), 240)).filter(Boolean);
+      if (list.length) return list.slice(0, 5);
+    }
+  }
+  return [];
+}
+
+function pickBody(source) {
+  for (const key of BODY_KEYS) {
+    const value = source[key];
+    if (typeof value === "string" && value.trim()) return value;
+    if (Array.isArray(value) && value.every((item) => typeof item === "string") && value.length === 1) return value[0];
+  }
+  return "";
+}
+
+function pickImage(source) {
+  const value = source.image || source.imageUrl || source.image_url || source.photo || source.picture;
+  if (value && typeof value === "object") return value.url || value.src || "";
+  return value;
+}
+
 function normalizeSlide(raw, index) {
-  const source = raw && typeof raw === "object" ? raw : {};
-  const bullets = (Array.isArray(source.bullets) ? source.bullets : [])
-    .map((item) => asText(typeof item === "string" ? item : item?.text, 240))
-    .filter(Boolean)
-    .slice(0, 5);
+  const source =
+    typeof raw === "string" ? { title: raw } : raw && typeof raw === "object" ? raw : {};
+  let bullets = pickBullets(source);
+  let bodyRaw = pickBody(source);
+  // Если текст пришёл одной строкой с переносами или маркерами, превращаем его в пункты.
+  if (!bullets.length && typeof bodyRaw === "string" && /\n\s*(?:[-•*–—]|\d+[.)])\s+/.test(`\n${bodyRaw}`)) {
+    const lines = bodyRaw
+      .split(/\n+/)
+      .map((line) => line.replace(/^\s*(?:[-•*–—]|\d+[.)])\s+/, "").trim())
+      .filter(Boolean);
+    if (lines.length >= 2) {
+      bullets = lines.map((line) => asText(line, 240)).slice(0, 5);
+      bodyRaw = "";
+    }
+  }
   const metrics = (Array.isArray(source.metrics) ? source.metrics : [])
     .map((item) => ({
       value: asText(item?.value ?? item?.stat, 16),
@@ -88,17 +138,17 @@ function normalizeSlide(raw, index) {
   }
   return {
     layout,
-    kicker: asText(source.kicker, 48),
-    title: asText(source.title, 140),
-    subtitle: asText(source.subtitle, 280),
-    body: asText(source.body, 560),
+    kicker: asText(source.kicker || source.eyebrow || source.label, 48),
+    title: asText(source.title || source.heading || source.header || source.name, 140),
+    subtitle: asText(source.subtitle || source.subheading || source.tagline, 280),
+    body: asText(bodyRaw, 560),
     bullets,
-    aside: asText(source.aside, 360),
+    aside: asText(source.aside || source.sidebar || source.note, 360),
     quote: asText(source.quote, 320),
     author: asText(source.author, 80),
     metrics,
     notes: asText(source.notes, 500),
-    image: httpsUrl(source.image || source.imageUrl),
+    image: httpsUrl(pickImage(source)),
     imageAlt: asText(source.imageAlt || source.image_alt, 140),
     links,
   };
@@ -153,8 +203,10 @@ function hasContent(slide) {
 
 export function normalizeDeck(input) {
   if (!input || typeof input !== "object") throw new Error("В ответе не было презентации.");
-  const root = input.deck && typeof input.deck === "object" ? input.deck : input;
-  const slides = (Array.isArray(root.slides) ? root.slides : [])
+  let root = input.deck || input.presentation || input;
+  if (Array.isArray(root)) root = { slides: root };
+  if (!root || typeof root !== "object") throw new Error("В ответе не было презентации.");
+  const slides = (Array.isArray(root.slides) ? root.slides : Array.isArray(root.pages) ? root.pages : [])
     .map(normalizeSlide)
     .filter(hasContent)
     .slice(0, 12);
@@ -240,23 +292,58 @@ export function finishDeck(deck, { materials, flags }) {
 
   if (facts.length) {
     const hero = deck.slides.find((slide) => slide.layout === "hero");
-    if (hero && (!hero.subtitle || vague(hero.subtitle))) hero.subtitle = facts[0].text;
+    if (hero && (!hero.subtitle || vague(hero.subtitle))) hero.subtitle = sentences(facts[0].text)[0].slice(0, 220);
+    // Общий запас предложений из всех фактов: раздаём их по пустым слайдам без повторов.
+    const heroText = hero?.subtitle || "";
+    let pool = facts.flatMap((fact) => sentences(fact.text)).filter((part) => !heroText.includes(part.slice(0, 40)));
+    if (!pool.length) pool = facts.flatMap((fact) => sentences(fact.text));
     let cursor = 0;
+    const take = (count) => {
+      const picked = [];
+      for (let step = 0; step < count && step < pool.length; step += 1) {
+        picked.push(pool[cursor % pool.length]);
+        cursor += 1;
+      }
+      return picked;
+    };
     for (const slide of deck.slides) {
-      if (["hero", "closing", "sources", "quote"].includes(slide.layout)) continue;
+      if (["hero", "closing", "sources", "quote", "metrics"].includes(slide.layout)) continue;
       const blob = `${slide.title} ${slide.subtitle} ${slide.body} ${slide.bullets.join(" ")}`;
       if (usesFact(blob, facts) && !thin(slide)) continue;
-      const fact = facts[cursor % facts.length];
-      cursor += 1;
-      if (!fact) break;
-      if (vague(slide.body) || !slide.body) slide.body = fact.text;
-      if (!slide.bullets.some((item) => item.includes(fact.text.slice(0, 24)))) {
-        slide.bullets = [fact.text, ...slide.bullets.filter((item) => !vague(item))].slice(0, 5);
+      const kept = slide.bullets.filter((item) => !vague(item));
+      if (kept.length < 2) {
+        // Пустой слайд: добавляем реальные факты пунктами, чтобы не было одного заголовка.
+        const extra = take(Math.max(1, Math.min(3, Math.ceil(pool.length / 2))));
+        slide.bullets = [...kept, ...extra.filter((item) => !kept.includes(item))].slice(0, 4);
+        if (vague(slide.body)) slide.body = "";
+      } else {
+        const [extra] = take(1);
+        if (extra && !slide.bullets.includes(extra)) slide.bullets = [...kept, extra].slice(0, 5);
       }
+      // У section на слайде виден только заголовок, поэтому слайд с текстом делаем списком.
+      if (slide.layout === "section") slide.layout = slide.image ? "split" : "bullets";
     }
   }
 
   return deck;
+}
+
+const CONTENT_LAYOUTS = new Set(["section", "bullets", "split"]);
+
+/** Слайды в середине колоды, где кроме заголовка почти ничего нет. */
+export function emptySlides(deck) {
+  return deck.slides.filter((slide, index) => {
+    if (index === 0 || !CONTENT_LAYOUTS.has(slide.layout)) return false;
+    const text = `${slide.body} ${slide.bullets.join(" ")} ${slide.aside}`.replace(/\s+/g, " ").trim();
+    return text.length < 40;
+  });
+}
+
+/** true, если модель вернула «скелет»: много слайдов с одним заголовком. */
+export function deckLooksEmpty(deck) {
+  const middle = deck.slides.filter((slide, index) => index > 0 && CONTENT_LAYOUTS.has(slide.layout));
+  if (!middle.length) return deck.slides.length > 2;
+  return emptySlides(deck).length >= Math.max(1, Math.ceil(middle.length / 2));
 }
 
 function blankSlide(layout) {
@@ -276,6 +363,16 @@ function blankSlide(layout) {
     imageAlt: "",
     links: [],
   };
+}
+
+function sentences(text) {
+  const parts = String(text || "")
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+(?=[A-ZА-ЯЁ0-9«"])/u)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 20)
+    .map((part) => part.slice(0, 240));
+  return parts.length ? parts : [String(text || "").slice(0, 240)];
 }
 
 function thin(slide) {

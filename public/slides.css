@@ -416,3 +416,19 @@ blockquote.is-long {
   font-size: 14px;
   line-height: 1.35;
 }
+
+/* Итоговый слайд с выводами: список шире заголовка и выровнен по левому краю. */
+.layout-closing .hero-copy:has(.points) {
+  max-width: 900px;
+}
+
+.layout-closing .points {
+  text-align: left;
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 820px;
+}
+
+.layout-closing .points li {
+  font-size: 24px;
+}
