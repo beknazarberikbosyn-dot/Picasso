@@ -1,5 +1,8 @@
 const BUILTIN_BASE = "https://api.llm7.io/v1";
 const BUILTIN_MODEL = "codestral-latest";
+// Gemini через OpenAI-совместимый адрес Google (ai.google.dev/gemini-api/docs/openai).
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 function completionsUrl(baseUrl) {
   if (/\/(?:openai|chat\/completions)$/.test(baseUrl)) return baseUrl;
@@ -35,7 +38,7 @@ export function resolveCreds(env = {}) {
     // Без токена llm7.io даёт ~10 запросов в минуту на IP, а у Vercel IP общие —
     // лимит быстро кончается. Бесплатный токен (LLM7_TOKEN) поднимает лимит.
     const token = (env.llm7Token || "").trim();
-    return { baseUrl: BUILTIN_BASE, model: customModel || BUILTIN_MODEL, apiKey: token, builtin: true };
+    return { baseUrl: BUILTIN_BASE, model: customModel || BUILTIN_MODEL, apiKey: token, builtin: true, provider: "llm7" };
   }
   const baseUrl = safeBase(customBase || "https://api.openai.com/v1");
   const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(baseUrl);
@@ -46,16 +49,31 @@ export function resolveCreds(env = {}) {
     model: (customModel || "gpt-4o-mini").slice(0, 120),
     apiKey,
     builtin: false,
+    provider: "custom",
   };
 }
 
 export function serverCredsFromEnv() {
-  return resolveCreds({
+  const base = resolveCreds({
     baseUrl: process.env.OPENAI_BASE_URL || "",
     apiKey: process.env.OPENAI_API_KEY || "",
     model: process.env.OPENAI_MODEL || "",
     llm7Token: process.env.LLM7_TOKEN || "",
   });
+  const geminiKey = (process.env.GEMINI_API_KEY || "").trim();
+  if (!geminiKey) return base;
+  // Основная модель — Gemini. Прежняя модель (LLM7 или своя) остаётся запасной:
+  // к ней сайт переходит сам, если у Gemini кончился лимит или он недоступен.
+  const perDay = Number(process.env.GEMINI_RPD);
+  return {
+    baseUrl: GEMINI_BASE,
+    model: (process.env.GEMINI_MODEL || "").trim().slice(0, 120) || GEMINI_MODEL,
+    apiKey: geminiKey,
+    builtin: false,
+    provider: "gemini",
+    requestsPerDay: Number.isFinite(perDay) && perDay > 0 ? Math.round(perDay) : null,
+    fallbacks: base.apiKey || base.builtin ? [base] : [],
+  };
 }
 
 async function callOnce(creds, messages, extra) {
@@ -72,7 +90,8 @@ async function callOnce(creds, messages, extra) {
         messages,
         ...extra,
       }),
-      signal: AbortSignal.timeout(90000),
+      // Если есть запасная модель, не ждём основную дольше 35 секунд — иначе не уложимся в лимит Vercel.
+      signal: AbortSignal.timeout(creds.fallbacks?.length ? 35000 : 90000),
     });
   } catch {
     const error = new Error("Нет связи с API. Проверьте адрес и интернет.");
@@ -117,17 +136,26 @@ async function callOnce(creds, messages, extra) {
 
 // Лимиты llm7.io за сутки и за час (docs.llm7.io/limits). API остатка у llm7 нет,
 // поэтому сайт сам считает потраченные токены по полю usage в ответах модели.
-export function planLimits(creds) {
-  if (!creds?.builtin) return null;
-  return creds.apiKey
-    ? { plan: "free-token", tokensPerDay: 1000000, requestsPerHour: 100 }
-    : { plan: "anonymous", tokensPerDay: 500000, requestsPerHour: 60 };
+// У Gemini лимит считается в запросах за сутки и зависит от модели и аккаунта
+// (точные числа — в Google AI Studio), поэтому его можно задать в GEMINI_RPD.
+export function planLimits(creds, provider) {
+  const chain = [creds, ...(creds?.fallbacks || [])].filter(Boolean);
+  const active = chain.find((item) => item.provider === provider) || chain[0];
+  if (!active) return null;
+  if (active.provider === "gemini") {
+    return { plan: "gemini", provider: "gemini", model: active.model, requestsPerDay: active.requestsPerDay || null };
+  }
+  if (!active.builtin) return { plan: "custom", provider: "custom", model: active.model };
+  return active.apiKey
+    ? { plan: "free-token", provider: "llm7", model: active.model, tokensPerDay: 1000000, requestsPerHour: 100 }
+    : { plan: "anonymous", provider: "llm7", model: active.model, tokensPerDay: 500000, requestsPerHour: 60 };
 }
 
 function recordUsage(creds, data, headers) {
   const meter = creds.meter;
   if (!meter) return;
   meter.calls += 1;
+  meter.provider = creds.provider || (creds.builtin ? "llm7" : "custom");
   const usage = data?.usage || {};
   const total = Number(usage.total_tokens) || (Number(usage.prompt_tokens) || 0) + (Number(usage.completion_tokens) || 0);
   if (Number.isFinite(total)) meter.tokens += total;
@@ -147,11 +175,20 @@ function recordUsage(creds, data, headers) {
 
 async function complete(creds, messages) {
   const hosted = /api\.openai\.com|openrouter\.ai|api\.llm7\.io/.test(creds.baseUrl);
-  const attempts = creds.builtin
-    ? [{ response_format: { type: "json_object" }, max_tokens: 4096 }, { max_tokens: 4096 }]
-    : hosted
-      ? [{ response_format: { type: "json_object" }, max_tokens: 4096 }, { max_tokens: 4096 }]
-      : [{ max_tokens: 4096 }, { max_completion_tokens: 4096 }];
+  let attempts;
+  if (creds.provider === "gemini") {
+    // «Размышления» Gemini тратят те же max_tokens, что и ответ, и JSON обрывается.
+    // У 2.5 их можно выключить (none); у 3.x нельзя — тогда low и запас по токенам.
+    attempts = [
+      { response_format: { type: "json_object" }, max_tokens: 8192, reasoning_effort: "none" },
+      { response_format: { type: "json_object" }, max_tokens: 12000, reasoning_effort: "low" },
+      { max_tokens: 12000 },
+    ];
+  } else if (creds.builtin || hosted) {
+    attempts = [{ response_format: { type: "json_object" }, max_tokens: 4096 }, { max_tokens: 4096 }];
+  } else {
+    attempts = [{ max_tokens: 4096 }, { max_completion_tokens: 4096 }];
+  }
   let lastError;
   for (const extra of attempts) {
     try {
@@ -165,12 +202,28 @@ async function complete(creds, messages) {
 }
 
 export async function completeRespectingLimit(creds, messages) {
-  try {
-    return await complete(creds, messages);
-  } catch (error) {
-    if (error.status !== 429) throw error;
-    // Одна повторная попытка. Ждём не дольше 12 секунд, чтобы уложиться в лимит функции Vercel.
-    await delay(Math.min(12, error.retryAfter || 8) * 1000);
-    return await complete(creds, messages);
+  // Цепочка: основная модель, затем запасные. К следующей переходим, когда у текущей
+  // кончился лимит, отклонён ключ, нет такой модели или она недоступна.
+  const chain = [creds, ...(creds.fallbacks || []).map((item) => ({ ...item, meter: creds.meter }))];
+  let lastError;
+  for (let index = 0; index < chain.length; index += 1) {
+    const current = chain[index];
+    const last = index === chain.length - 1;
+    // Запасной модели не ставим короткий таймаут основной.
+    const target = last ? { ...current, fallbacks: [] } : current;
+    try {
+      return await complete(target, messages);
+    } catch (error) {
+      lastError = error;
+      if (creds.meter) {
+        creds.meter.skipped = [...(creds.meter.skipped || []), { provider: current.provider, status: error.status }];
+      }
+      if (!last) continue;
+      if (error.status !== 429) throw error;
+      // Одна повторная попытка. Ждём не дольше 12 секунд, чтобы уложиться в лимит функции Vercel.
+      await delay(Math.min(12, error.retryAfter || 8) * 1000);
+      return await complete(target, messages);
+    }
   }
+  throw lastError;
 }

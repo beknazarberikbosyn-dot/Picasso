@@ -3,12 +3,15 @@ import { planLimits, serverCredsFromEnv } from "./llm.js";
 
 export function getHealth() {
   const creds = serverCredsFromEnv();
+  const chain = [creds, ...(creds.fallbacks || [])];
   return {
     ok: true,
     ready: true,
     model: creds.model,
-    provider: creds.builtin ? "llm7" : "custom",
-    token: Boolean(creds.apiKey),
+    provider: creds.provider || (creds.builtin ? "llm7" : "custom"),
+    // Порядок, в котором сайт пробует модели: основная, затем запасные.
+    providers: chain.map((item) => ({ provider: item.provider, model: item.model, key: Boolean(item.apiKey) })),
+    token: chain.some((item) => item.provider === "llm7" && item.apiKey),
     limits: planLimits(creds),
   };
 }

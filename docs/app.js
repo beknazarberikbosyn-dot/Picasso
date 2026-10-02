@@ -493,7 +493,7 @@ async function compose(retryText = "") {
 // так что здесь видно расход из этого браузера; точный остаток — в кабинете dash.llm7.io.
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
-const usageState = { limits: null, limitHitAt: 0 };
+const usageState = { limits: null, active: null, fallbackFrom: "", limitHitAt: 0 };
 
 function usageLog() {
   try {
@@ -514,10 +514,23 @@ function saveUsageLog(list) {
 }
 
 function recordUsage(usage) {
-  if (usage.tokensPerDay) {
-    usageState.limits = { plan: usage.plan, tokensPerDay: usage.tokensPerDay, requestsPerHour: usage.requestsPerHour };
+  if (usage.plan) {
+    usageState.active = {
+      plan: usage.plan,
+      provider: usage.provider,
+      model: usage.model,
+      tokensPerDay: usage.tokensPerDay,
+      requestsPerHour: usage.requestsPerHour,
+      requestsPerDay: usage.requestsPerDay,
+    };
   }
-  const entry = { t: Date.now(), tokens: Number(usage.tokens) || 0, calls: Number(usage.calls) || 0 };
+  usageState.fallbackFrom = usage.fallbackFrom || "";
+  const entry = {
+    t: Date.now(),
+    tokens: Number(usage.tokens) || 0,
+    calls: Number(usage.calls) || 0,
+    provider: usage.provider || "llm7",
+  };
   if (Number.isFinite(usage.remainingTokens)) entry.remainingTokens = usage.remainingTokens;
   if (Number.isFinite(usage.remainingRequests)) entry.remainingRequests = usage.remainingRequests;
   saveUsageLog([...usageLog(), entry]);
@@ -530,7 +543,7 @@ async function loadLimits() {
     const remoteBase = await loadRemoteApiBase();
     if (!remoteBase && location.hostname.endsWith("github.io")) {
       // На GitHub Pages без API модель вызывается из браузера без токена.
-      usageState.limits = { plan: "anonymous", tokensPerDay: 500000, requestsPerHour: 60 };
+      usageState.limits = { plan: "anonymous", provider: "llm7", tokensPerDay: 500000, requestsPerHour: 60 };
     } else {
       const url = remoteBase ? `${remoteBase}/api/health` : appPath("/api/health");
       const response = await fetch(url, { cache: "no-store" });
@@ -559,57 +572,86 @@ function plural(value, one, few, many) {
   return many;
 }
 
+const PROVIDER_NAMES = { gemini: "Gemini", llm7: "LLM7", custom: "своя модель" };
+
 function paintUsage() {
-  const limits = usageState.limits;
-  const log = usageLog();
+  if (!els.usage) return;
+  els.usage.hidden = false;
+  // Сейчас отвечает: модель последнего ответа, а до первого запроса — основная с сервера.
+  const limits = usageState.active || usageState.limits;
+  const provider = limits?.provider || "llm7";
+  const name = PROVIDER_NAMES[provider] || provider;
   const now = Date.now();
+  const all = usageLog();
+  const log = all.filter((item) => (item.provider || "llm7") === provider);
   const used = log.reduce((sum, item) => sum + item.tokens, 0);
+  const calls = log.reduce((sum, item) => sum + (item.calls || 1), 0);
   const callsHour = log.filter((item) => now - item.t < HOUR).reduce((sum, item) => sum + (item.calls || 1), 0);
   const exact = [...log].reverse().find((item) => Number.isFinite(item.remainingTokens) && now - item.t < 10 * 60 * 1000);
   const decks = log.filter((item) => item.tokens > 0);
   const perDeck = decks.length ? used / decks.length : 0;
   const limitHit = usageState.limitHitAt && now - usageState.limitHitAt < 2 * 60 * 1000;
+  const fallback = usageState.fallbackFrom ? PROVIDER_NAMES[usageState.fallbackFrom] || usageState.fallbackFrom : "";
 
-  if (!els.usage) return;
-  els.usage.hidden = false;
-
-  const total = limits?.tokensPerDay || 0;
-  const left = exact ? exact.remainingTokens : total ? Math.max(0, total - used) : 0;
-  const share = total ? Math.max(0, Math.min(1, left / total)) : 1;
+  const tokenTotal = limits?.tokensPerDay || 0;
+  const requestTotal = limits?.requestsPerDay || 0;
+  let share = 1;
+  let label;
+  if (tokenTotal) {
+    const left = exact ? exact.remainingTokens : Math.max(0, tokenTotal - used);
+    share = Math.max(0, Math.min(1, left / tokenTotal));
+    label = `${name} · ${exact ? "" : "≈ "}${formatTokens(left)} токенов`;
+  } else if (requestTotal) {
+    const left = Math.max(0, requestTotal - calls);
+    share = Math.max(0, Math.min(1, left / requestTotal));
+    label = `${name} · ≈ ${left} ${plural(left, "запрос", "запроса", "запросов")}`;
+  } else if (limits) {
+    label = `${name} · ${calls} ${plural(calls, "запрос", "запроса", "запросов")} за сутки`;
+  } else {
+    label = all.length ? `${formatTokens(used)} токенов за сутки` : "Токены: нет данных";
+  }
   els.usageFill.style.width = `${Math.round(share * 100)}%`;
-  els.usage.classList.toggle("is-low", limitHit || (total && share < 0.15));
-  els.usageText.textContent = limitHit
-    ? "Лимит исчерпан"
-    : total
-      ? `${exact ? "" : "≈ "}${formatTokens(left)} токенов`
-      : log.length
-        ? `${formatTokens(used)} токенов за сутки`
-        : "Токены: нет данных";
-  els.usage.title = "Сколько токенов модели осталось на сегодня";
+  els.usage.classList.toggle("is-low", Boolean(limitHit || fallback || ((tokenTotal || requestTotal) && share < 0.15)));
+  els.usageText.textContent = limitHit ? "Лимит исчерпан" : label;
+  els.usage.title = "Какая модель отвечает и сколько осталось на сегодня";
 
   if (els.usagePop.hidden) return;
-  const planName = limits?.plan === "free-token" ? "бесплатный токен LLM7" : limits?.plan === "anonymous" ? "LLM7 без токена" : "своя модель";
   const rows = [];
   if (!limits) {
-    rows.push(`<p>Не удалось узнать тариф модели у сервера. Остаток появится после первой собранной презентации.</p>`);
+    rows.push(`<p>Не удалось узнать у сервера, какая модель подключена. Данные появятся после первой собранной презентации.</p>`);
+  } else {
+    rows.push(`<p class="usage-big">${esc(name)} <span>${esc(limits.model || "")}</span></p>`);
   }
-  if (total) {
-    rows.push(`<p class="usage-big">${exact ? "" : "≈ "}${esc(formatTokens(left))} <span>из ${esc(formatTokens(total))} токенов на сутки</span></p>`);
+  if (fallback) {
+    rows.push(`<p class="usage-warn">${esc(fallback)} не ответил (лимит или сбой), поэтому последнюю презентацию собрала запасная модель ${esc(name)}.</p>`);
+  }
+  if (tokenTotal) {
+    const left = exact ? exact.remainingTokens : Math.max(0, tokenTotal - used);
+    rows.push(`<p>Осталось ${exact ? "" : "≈ "}<b>${esc(formatTokens(left))}</b> из ${esc(formatTokens(tokenTotal))} токенов на сутки.</p>`);
     if (perDeck && !exact) {
       const count = Math.floor(left / perDeck);
-      rows.push(`<p>Хватит примерно на <b>${count}</b> ${plural(count, "презентацию", "презентации", "презентаций")} или правок (в среднем ${esc(formatTokens(perDeck))} токенов на одну).</p>`);
+      rows.push(`<p>Хватит примерно на <b>${count}</b> ${plural(count, "презентацию", "презентации", "презентаций")} или правок.</p>`);
     }
     rows.push(`<p>Запросов к модели за час: <b>${callsHour}</b> из ${limits.requestsPerHour}.</p>`);
+  } else if (requestTotal) {
+    const left = Math.max(0, requestTotal - calls);
+    rows.push(`<p>Осталось ≈ <b>${left}</b> из ${requestTotal} запросов на сутки. Одна презентация или правка — обычно один запрос.</p>`);
   }
-  rows.push(`<p>Потрачено за 24 часа в этом браузере: <b>${esc(formatTokens(used))}</b> ${plural(Math.round(used), "токен", "токена", "токенов")}.</p>`);
+  if (limits) {
+    rows.push(`<p>За 24 часа в этом браузере: <b>${calls}</b> ${plural(calls, "запрос", "запроса", "запросов")}, ${esc(formatTokens(used))} токенов.</p>`);
+  }
   if (limitHit) rows.push(`<p class="usage-warn">Модель только что ответила, что лимит исчерпан. Подождите минуту и попробуйте снова.</p>`);
-  rows.push(
-    `<p class="usage-note">Тариф: ${esc(planName)}. ${
-      exact
-        ? "Остаток пришёл от LLM7 вместе с последним ответом."
-        : "LLM7 не сообщает остаток, поэтому это оценка: лимит общий для всех посетителей сайта, а посчитаны только запросы из этого браузера. Точный остаток — в кабинете <a href=\"https://dash.llm7.io\" target=\"_blank\" rel=\"noopener noreferrer\">dash.llm7.io</a>."
-    }</p>`,
-  );
+  let note = "";
+  if (provider === "gemini") {
+    note = requestTotal
+      ? "Это оценка: лимит общий для всех посетителей сайта, а посчитаны только запросы из этого браузера. Точные лимиты и расход — в <a href=\"https://aistudio.google.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Google AI Studio</a>."
+      : "У Gemini дневной лимит считается в запросах и зависит от модели и аккаунта. Точные лимиты и расход — в <a href=\"https://aistudio.google.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Google AI Studio</a>. Когда лимит кончится, сайт сам перейдёт на запасную модель.";
+  } else if (provider === "llm7") {
+    note = exact
+      ? "Остаток пришёл от LLM7 вместе с последним ответом."
+      : "LLM7 не сообщает остаток, поэтому это оценка: лимит общий для всех посетителей сайта, а посчитаны только запросы из этого браузера. Точный остаток — в кабинете <a href=\"https://dash.llm7.io\" target=\"_blank\" rel=\"noopener noreferrer\">dash.llm7.io</a>.";
+  }
+  if (note) rows.push(`<p class="usage-note">${note}</p>`);
   els.usagePop.innerHTML = rows.join("");
 }
 

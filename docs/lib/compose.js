@@ -142,8 +142,14 @@ export async function composePresentation(body, credsOverride) {
   if ((flags.sources || flags.images) && !materials.facts.length && !materials.images.length) {
     reply = `${reply} Открытые страницы по этой теме не нашлись, поэтому ссылки и картинки не из чего было взять.`.slice(0, 600);
   }
-  const limits = planLimits(creds);
-  const usage = { tokens: meter.tokens, calls: meter.calls };
+  const limits = planLimits(creds, meter.provider);
+  const usage = { tokens: meter.tokens, calls: meter.calls, provider: meter.provider };
+  // Основная модель не ответила (лимит, ключ, сбой) — сайт покажет, что работала запасная.
+  const primary = creds.provider;
+  if (primary && meter.provider && meter.provider !== primary) {
+    usage.fallbackFrom = primary;
+    usage.fallbackStatus = meter.skipped?.find((item) => item.provider === primary)?.status || null;
+  }
   if (limits) Object.assign(usage, limits);
   if (meter.remainingTokens != null) usage.remainingTokens = meter.remainingTokens;
   if (meter.remainingRequests != null) usage.remainingRequests = meter.remainingRequests;
